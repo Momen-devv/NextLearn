@@ -8,6 +8,9 @@ async function bootstrap() {
   // Apply Middlewares
   app.use(helmet());
 
+  // Cors Policy
+  app.enableCors();
+
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();
