@@ -13,7 +13,7 @@ export class AuthService {
   constructor(
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
     private readonly jwtService: JwtService,
-    private readonly mailServics: MailService,
+    private readonly mailService: MailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -37,7 +37,7 @@ export class AuthService {
     });
 
     // Send email to verify account with verification code
-    await this.mailServics.sendVerificationEmail(
+    await this.sendVerificationMail(
       user.email,
       user.firstName,
       verificationCode,
@@ -48,12 +48,35 @@ export class AuthService {
 
   // GET /auth/verify-email/:verificationCode
   async verifyEmail(verificationCode: string) {
+    const user = await this.ensureUserExists(verificationCode);
+
+    this.checkVerificationCode(user, verificationCode);
+
+    await this.updateUser(user.id, {
+      isEmailVerified: true,
+      verificationCode: null,
+      verificationCodeExpiresAt: null,
+    });
+
+    return 'Your account verified successfully, please log in';
+  }
+
+  // POST /auth/login
+
+  private async ensureUserNotExists(email: string) {
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (user) throw new BadRequestException('User already exists');
+  }
+
+  private async ensureUserExists(verificationCode: string) {
     const user = await this.usersRepository.findOne({
       where: { verificationCode: verificationCode },
     });
-
     if (!user) throw new BadRequestException('No user found');
+    return user;
+  }
 
+  private checkVerificationCode(user: Partial<User>, verificationCode: string) {
     if (verificationCode !== user.verificationCode) {
       throw new BadRequestException('Invalid token');
     }
@@ -64,27 +87,27 @@ export class AuthService {
     ) {
       throw new BadRequestException('Token has expired');
     }
-
-    await this.usersRepository.update(
-      { id: user.id },
-      {
-        isEmailVerified: true,
-        verificationCode: null,
-        verificationCodeExpiresAt: null,
-      },
-    );
-
-    return 'Your account verified successfully';
-  }
-
-  private async ensureUserNotExists(email: string) {
-    const user = await this.usersRepository.findOne({ where: { email } });
-    if (user) throw new BadRequestException('User already exists');
   }
 
   private async createUser(data: Partial<User>): Promise<User> {
     const user = this.usersRepository.create(data);
     return await this.usersRepository.save(user);
+  }
+
+  private async updateUser(userId: string, data: Partial<User>) {
+    await this.usersRepository.update({ id: userId }, data);
+  }
+
+  private async sendVerificationMail(
+    email: string,
+    firstName: string,
+    verificationCode: string,
+  ) {
+    await this.mailService.sendVerificationEmail(
+      email,
+      firstName,
+      verificationCode,
+    );
   }
 
   private hashPassword(password: string): Promise<string> {
