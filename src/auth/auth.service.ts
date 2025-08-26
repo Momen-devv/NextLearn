@@ -26,14 +26,14 @@ export class AuthService {
     // Genrate verification code
     const verificationCode = this.generateVerificationCode();
 
-    const verificationTokenExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
     // Add user in the db
     const user = await this.createUser({
       ...dto,
       password: hashedPassword,
       verificationCode,
-      verificationTokenExpiresAt,
+      verificationCodeExpiresAt,
     });
 
     // Send email to verify account with verification code
@@ -43,7 +43,38 @@ export class AuthService {
       verificationCode,
     );
 
-    return 'verification link send your email please verify your accaunt';
+    return 'verification link send your email please verify your account';
+  }
+
+  // GET /auth/verify-email/:verificationCode
+  async verifyEmail(verificationCode: string) {
+    const user = await this.usersRepository.findOne({
+      where: { verificationCode: verificationCode },
+    });
+
+    if (!user) throw new BadRequestException('No user found');
+
+    if (verificationCode !== user.verificationCode) {
+      throw new BadRequestException('Invalid token');
+    }
+
+    if (
+      user.verificationCodeExpiresAt &&
+      user.verificationCodeExpiresAt < new Date()
+    ) {
+      throw new BadRequestException('Token has expired');
+    }
+
+    await this.usersRepository.update(
+      { id: user.id },
+      {
+        isEmailVerified: true,
+        verificationCode: null,
+        verificationCodeExpiresAt: null,
+      },
+    );
+
+    return 'Your account verified successfully';
   }
 
   private async ensureUserNotExists(email: string) {

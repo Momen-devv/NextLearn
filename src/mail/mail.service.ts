@@ -12,10 +12,10 @@ export class MailService {
   async sendVerificationEmail(
     email: string,
     firstName: string,
-    verificationToken: string,
+    verificationCode: string,
   ) {
     const baseUrl = this.configService.get<string>('BASE_URL');
-    const verificationUrl = `${baseUrl}/auth/verify-email/${verificationToken}`;
+    const verificationUrl = `${baseUrl}/auth/verify-email/${verificationCode}`;
 
     await this.mailerService.sendMail({
       to: email,

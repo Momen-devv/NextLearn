@@ -30,11 +30,11 @@ export class User {
   @Column()
   lastName: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'text', nullable: true })
   verificationCode: string | null;
 
-  @Column({ nullable: true })
-  verificationTokenExpiresAt?: Date | null;
+  @Column({ type: 'timestamp', nullable: true })
+  verificationCodeExpiresAt: Date | null;
 
   @Column({ default: false })
   isEmailVerified: boolean;
