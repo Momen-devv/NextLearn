@@ -4,9 +4,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/users/entities/user.entity';
 import { Repository } from 'typeorm';
 import { hash } from 'bcrypt';
-import { randomBytes } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from 'src/mail/mail.service';
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class AuthService {
@@ -27,7 +27,6 @@ export class AuthService {
     const verificationCode = this.generateVerificationCode();
 
     const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
-
     // Add user in the db
     const user = await this.createUser({
       ...dto,
@@ -43,11 +42,13 @@ export class AuthService {
       verificationCode,
     );
 
-    return 'verification link send your email please verify your account';
+    return {
+      message: 'verification link send your email please verify your account',
+    };
   }
 
   // GET /auth/verify-email/:verificationCode
-  async verifyEmail(verificationCode: string) {
+  async verify(verificationCode: string) {
     const user = await this.ensureUserExists(verificationCode);
 
     this.checkVerificationCode(user, verificationCode);
@@ -58,8 +59,11 @@ export class AuthService {
       verificationCodeExpiresAt: null,
     });
 
-    return 'Your account verified successfully, please log in';
+    return { message: 'Your account verified successfully, please log in' };
   }
+
+  // post /auth/resend-verification
+  // resend() {}
 
   // POST /auth/login
 
@@ -77,6 +81,7 @@ export class AuthService {
   }
 
   private checkVerificationCode(user: Partial<User>, verificationCode: string) {
+    console.log(verificationCode, user.verificationCode);
     if (verificationCode !== user.verificationCode) {
       throw new BadRequestException('Invalid token');
     }
@@ -119,6 +124,6 @@ export class AuthService {
   }
 
   private generateVerificationCode(): string {
-    return randomBytes(32).toString('hex');
+    return uuidv4();
   }
 }

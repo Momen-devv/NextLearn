@@ -30,7 +30,7 @@ export class User {
   @Column()
   lastName: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   verificationCode: string | null;
 
   @Column({ type: 'timestamp', nullable: true })

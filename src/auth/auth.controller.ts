@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 
@@ -12,7 +19,10 @@ export class AuthController {
   }
 
   @Get('verify-email/:verificationCode')
-  verifyEmail(@Param('verificationCode') verificationCode: string) {
-    return this.authService.verifyEmail(verificationCode);
+  verify(
+    @Param('verificationCode', new ParseUUIDPipe())
+    verificationCode: string,
+  ) {
+    return this.authService.verify(verificationCode);
   }
 }
