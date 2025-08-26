@@ -7,6 +7,7 @@ import { hash } from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from 'src/mail/mail.service';
 import { v4 as uuidv4 } from 'uuid';
+import { ResendVerification } from './dto/resend-verification.dto';
 
 @Injectable()
 export class AuthService {
@@ -63,7 +64,43 @@ export class AuthService {
   }
 
   // post /auth/resend-verification
-  // resend() {}
+  async resendVerificationEmail(dto: ResendVerification) {
+    const user = await this.usersRepository.findOne({
+      where: { email: dto.email },
+    });
+    if (!user) throw new BadRequestException('No user found with this email');
+    if (user.isEmailVerified === true)
+      throw new BadRequestException('user account already verified');
+
+    if (
+      user.verificationCodeExpiresAt &&
+      user.verificationCodeExpiresAt > new Date()
+    )
+      throw new BadRequestException(
+        'A verification email has already been sent and is still valid. Please check your inbox.',
+      );
+
+    const verificationCode = this.generateVerificationCode();
+
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    // Add user in the db
+    await this.usersRepository.update(
+      { id: user.id },
+      {
+        verificationCode,
+        verificationCodeExpiresAt,
+      },
+    );
+
+    // Send email to verify account with verification code
+    await this.mailService.resendVerificationEmail(
+      user.email,
+      user.firstName,
+      verificationCode,
+    );
+
+    return { message: 'Verification link resent to your email' };
+  }
 
   // POST /auth/login
 
