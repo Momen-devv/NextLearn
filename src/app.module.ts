@@ -8,7 +8,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { dataSourceOptions } from '../db/data-source';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
-
+import { MailModule } from './mail/mail.module';
 @Module({
   imports: [
     ThrottlerModule.forRoot([
@@ -34,6 +34,7 @@ import { UsersModule } from './users/users.module';
     TypeOrmModule.forRoot(dataSourceOptions),
     AuthModule,
     UsersModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [
