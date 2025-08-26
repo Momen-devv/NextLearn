@@ -93,7 +93,7 @@ export class AuthService {
     );
 
     // Send email to verify account with verification code
-    await this.mailService.resendVerificationEmail(
+    await this.mailService.sendResendVerificationEmail(
       user.email,
       user.firstName,
       verificationCode,

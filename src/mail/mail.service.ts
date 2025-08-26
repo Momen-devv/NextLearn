@@ -27,4 +27,23 @@ export class MailService {
       },
     });
   }
+
+  async sendResendVerificationEmail(
+    email: string,
+    firstName: string,
+    verificationCode: string,
+  ) {
+    const baseUrl = this.configService.get<string>('BASE_URL');
+    const verificationUrl = `${baseUrl}/auth/verify-email/${verificationCode}`;
+
+    await this.mailerService.sendMail({
+      to: email,
+      subject: 'Resend Verification Email',
+      template: './resend-verification.pug',
+      context: {
+        verificationUrl,
+        firstName,
+      },
+    });
+  }
 }
