@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
+import { ResendVerification } from './dto/resend-verification.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -24,5 +25,10 @@ export class AuthController {
     verificationCode: string,
   ) {
     return this.authService.verify(verificationCode);
+  }
+
+  @Post('resend-verification')
+  resend(@Body() dto: ResendVerification) {
+    return this.authService.resendVerificationEmail(dto);
   }
 }
