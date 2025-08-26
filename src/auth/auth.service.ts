@@ -6,12 +6,14 @@ import { Repository } from 'typeorm';
 import { hash } from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
+import { MailService } from 'src/mail/mail.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly mailServics: MailService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -24,22 +26,25 @@ export class AuthService {
     // Genrate verification code
     const verificationCode = this.generateVerificationCode();
 
+    const verificationTokenExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+
     // Add user in the db
     const user = await this.createUser({
       ...dto,
       password: hashedPassword,
       verificationCode,
+      verificationTokenExpiresAt,
     });
-    // Create jwt for user
-    const token = await this.generateToken(user.id, user.role);
-
-    return token;
 
     // Send email to verify account with verification code
-  }
+    await this.mailServics.sendVerificationEmail(
+      user.email,
+      user.firstName,
+      verificationCode,
+    );
 
-  // GET /auth/verify-email/:userId/:verificationCode
-  // verify(){}
+    return 'verification link send your email please verify your accaunt';
+  }
 
   private async ensureUserNotExists(email: string) {
     const user = await this.usersRepository.findOne({ where: { email } });
