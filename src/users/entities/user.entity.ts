@@ -16,7 +16,7 @@ export enum UserRole {
 @Entity({ name: 'users' })
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: number;
+  id: string;
 
   @Column({ unique: true })
   email: string;
@@ -31,10 +31,13 @@ export class User {
   lastName: string;
 
   @Column({ nullable: true })
-  verificationCode: string;
+  verificationCode: string | null;
+
+  @Column({ nullable: true })
+  verificationTokenExpiresAt?: Date | null;
 
   @Column({ default: false })
-  isActive: boolean;
+  isEmailVerified: boolean;
 
   @Column({
     type: 'enum',
