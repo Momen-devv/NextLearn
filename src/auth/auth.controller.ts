@@ -5,11 +5,12 @@ import {
   Param,
   Post,
   ParseUUIDPipe,
+  Request,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { ResendVerification } from './dto/resend-verification.dto';
-
+import { LoginDto } from './dto/login.dto';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
@@ -30,5 +31,9 @@ export class AuthController {
   @Post('resend-verification')
   resend(@Body() dto: ResendVerification) {
     return this.authService.resendVerificationEmail(dto);
+  }
+  @Post('login')
+  login(@Body() dto: LoginDto, @Request() req: any) {
+    return this.authService.login(dto, req);
   }
 }
