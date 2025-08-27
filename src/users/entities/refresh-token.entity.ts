@@ -1,26 +1,32 @@
-import { Column, Entity, PrimaryGeneratedColumn, ManyToOne } from 'typeorm';
+import {
+  Column,
+  Entity,
+  PrimaryGeneratedColumn,
+  ManyToOne,
+  CreateDateColumn,
+} from 'typeorm';
 import { User } from './user.entity';
 
 @Entity({ name: 'refreshTokens' })
 export class RefreshToken {
   @PrimaryGeneratedColumn('uuid')
-  id: number;
+  id: string;
 
   @Column({ unique: true })
   token: string;
 
-  @Column()
-  userId: string;
-
   @ManyToOne(() => User, (user) => user.refreshTokens)
   user: User;
-
-  @Column()
-  expires: Date;
 
   @Column({ default: false })
   revoked: boolean;
 
   @Column({ nullable: true })
   device: string;
+
+  @Column()
+  expires: Date;
+
+  @CreateDateColumn()
+  createdAt: Date;
 }
