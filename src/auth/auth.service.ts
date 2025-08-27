@@ -1,18 +1,28 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { RegisterDto } from './dto/register.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/users/entities/user.entity';
+import { RefreshToken } from 'src/users/entities/refresh-token.entity';
 import { Repository } from 'typeorm';
-import { hash } from 'bcrypt';
+import { hash, compare } from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from 'src/mail/mail.service';
 import { v4 as uuidv4 } from 'uuid';
 import { ResendVerification } from './dto/resend-verification.dto';
+import { LoginDto } from './dto/login.dto';
+import { Request } from 'express';
+import * as useragent from 'useragent';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
+    @InjectRepository(RefreshToken)
+    private readonly refreshTokensRepository: Repository<RefreshToken>,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
   ) {}
@@ -103,6 +113,53 @@ export class AuthService {
   }
 
   // POST /auth/login
+  async login(dto: LoginDto, req: Request) {
+    const user = await this.usersRepository.findOne({
+      where: { email: dto.email },
+    });
+
+    if (!user)
+      throw new BadRequestException(
+        'there is no user with this email, try register',
+      );
+
+    if (!user.isEmailVerified)
+      throw new UnauthorizedException('Email not verified');
+
+    const isPasswordValid = await compare(dto.password, user.password);
+    if (!isPasswordValid)
+      throw new UnauthorizedException('Invalid credentials');
+    // Genrate access token and refresh token
+    const payload = { userId: user.id, email: user.email };
+    const accessToken = await this.jwtService.signAsync(payload, {
+      expiresIn: '15m',
+    });
+    const refreshToken = await this.jwtService.signAsync(payload, {
+      expiresIn: '7d',
+    });
+    // Get user device
+    const ua = useragent.parse(req.headers['user-agent']);
+    const deviceInfo = `${ua.os?.toString() || 'Unknown OS'} - ${ua.device?.toString() || 'Unknown Device'} - ${req.ip}`;
+    // If same user in same  device login delete old one
+    await this.refreshTokensRepository.delete({
+      user: { id: user.id },
+      device: deviceInfo,
+    });
+    // Save refresh token in DB with info
+    const newRefreshToken = this.refreshTokensRepository.create({
+      token: refreshToken,
+      user,
+      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), //10 min
+      device: deviceInfo,
+    });
+    await this.refreshTokensRepository.save(newRefreshToken);
+    // TO DO: send access Token in cookies
+    return {
+      accessToken,
+      refreshToken,
+      message: 'Login successful',
+    };
+  }
 
   private async ensureUserNotExists(email: string) {
     const user = await this.usersRepository.findOne({ where: { email } });

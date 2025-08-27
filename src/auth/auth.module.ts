@@ -17,7 +17,6 @@ import { MailModule } from 'src/mail/mail.module';
         return {
           global: true,
           secret: config.get<string>('JWT_SECRET'),
-          signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN') },
         };
       },
     }),
