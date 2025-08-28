@@ -17,6 +17,7 @@ import { LoginDto } from './dto/login.dto';
 import type { Request, Response } from 'express';
 import * as useragent from 'useragent';
 import { console } from 'inspector';
+import { forgotPasswordDto } from './dto/forgot-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -60,7 +61,7 @@ export class AuthService {
   }
 
   // GET /auth/verify-email/:verificationCode
-  async verify(verificationCode: string) {
+  async verifyEmail(verificationCode: string) {
     const user = await this.ensureUserExists(verificationCode);
 
     this.checkVerificationCode(user, verificationCode);
@@ -182,6 +183,38 @@ export class AuthService {
     return {
       message: 'Access token refreshed',
     };
+  }
+
+  async forgotPassword(dto: forgotPasswordDto) {
+    const user = await this.usersRepository.findOne({
+      where: { email: dto.email },
+    });
+    if (!user)
+      throw new BadRequestException('There is no user with this email');
+
+    if (
+      user.passwordResetCodeExpiresAt &&
+      user.passwordResetCodeExpiresAt > new Date()
+    )
+      throw new BadRequestException(
+        'A email has already been sent and is still valid. Please check your inbox.',
+      );
+
+    const resetCode = this.generateVerificationCode();
+    const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+
+    user.passwordResetCode = resetCode;
+    user.passwordResetCodeExpiresAt = verificationCodeExpiresAt;
+
+    await this.usersRepository.save(user);
+
+    await this.mailService.sendResetPassword(
+      user.email,
+      user.firstName,
+      resetCode,
+    );
+
+    return { message: 'Reset link sent to your email' };
   }
 
   private setTokens(res: Response, accessToken: string, refreshToken: string) {
