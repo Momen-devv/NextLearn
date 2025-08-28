@@ -14,8 +14,9 @@ import { MailService } from 'src/mail/mail.service';
 import { v4 as uuidv4 } from 'uuid';
 import { ResendVerification } from './dto/resend-verification.dto';
 import { LoginDto } from './dto/login.dto';
-import { Request } from 'express';
+import type { Request, Response } from 'express';
 import * as useragent from 'useragent';
+import { console } from 'inspector';
 
 @Injectable()
 export class AuthService {
@@ -113,7 +114,7 @@ export class AuthService {
   }
 
   // POST /auth/login
-  async login(dto: LoginDto, req: Request) {
+  async login(dto: LoginDto, req: Request, res: Response) {
     const user = await this.usersRepository.findOne({
       where: { email: dto.email },
     });
@@ -135,7 +136,7 @@ export class AuthService {
       expiresIn: '15m',
     });
     const refreshToken = await this.jwtService.signAsync(payload, {
-      expiresIn: '7d',
+      expiresIn: '10d',
     });
     // Get user device
     const ua = useragent.parse(req.headers['user-agent']);
@@ -149,16 +150,25 @@ export class AuthService {
     const newRefreshToken = this.refreshTokensRepository.create({
       token: refreshToken,
       user,
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), //10 min
+      expires: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10d
       device: deviceInfo,
     });
     await this.refreshTokensRepository.save(newRefreshToken);
-    // TO DO: send access Token in cookies
-    return {
-      accessToken,
-      refreshToken,
-      message: 'Login successful',
-    };
+
+    // Set access token and refresh token
+    this.setTokens(res, accessToken, refreshToken);
+
+    return { message: 'Login successful' };
+  }
+
+  private setTokens(res: Response, accessToken: string, refreshToken: string) {
+    res.setHeader('Authorization', `Bearer ${accessToken}`);
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 10 * 24 * 60 * 60 * 1000,
+    });
   }
 
   private async ensureUserNotExists(email: string) {
