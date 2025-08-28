@@ -16,8 +16,8 @@ import { ResendVerification } from './dto/resend-verification.dto';
 import { LoginDto } from './dto/login.dto';
 import type { Request, Response } from 'express';
 import * as useragent from 'useragent';
-import { console } from 'inspector';
-import { forgotPasswordDto } from './dto/forgot-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPassword } from './dto/reset-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -130,7 +130,7 @@ export class AuthService {
 
     const isPasswordValid = await compare(dto.password, user.password);
     if (!isPasswordValid)
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Invalid email or password');
     // Genrate access token and refresh token
     const payload = { userId: user.id, email: user.email };
     const accessToken = await this.jwtService.signAsync(payload, {
@@ -158,7 +158,7 @@ export class AuthService {
     this.setTokens(res, accessToken, refreshToken);
     return { message: 'Login successful' };
   }
-
+  // TO DO : but refresh with sessions
   async refresh(req: Request, res: Response) {
     const refreshToken = req.cookies['refreshToken'] as string;
 
@@ -185,7 +185,7 @@ export class AuthService {
     };
   }
 
-  async forgotPassword(dto: forgotPasswordDto) {
+  async forgotPassword(dto: ForgotPasswordDto) {
     const user = await this.usersRepository.findOne({
       where: { email: dto.email },
     });
@@ -217,6 +217,27 @@ export class AuthService {
     return { message: 'Reset link sent to your email' };
   }
 
+  async resetPassword(dto: ResetPassword, token: string) {
+    const user = await this.usersRepository.findOne({
+      where: { passwordResetCode: token },
+    });
+    if (!user) throw new BadRequestException('User not found');
+    if (
+      user.passwordResetCodeExpiresAt &&
+      user.passwordResetCodeExpiresAt < new Date()
+    )
+      throw new BadRequestException('Token invalid or expired');
+
+    const newPassword = await this.hashPassword(dto.password);
+
+    user.password = newPassword;
+    user.passwordResetCode = null;
+    user.passwordResetCodeExpiresAt = null;
+    await this.usersRepository.save(user);
+
+    return { message: 'Password reset successful' };
+  }
+
   private setTokens(res: Response, accessToken: string, refreshToken: string) {
     res.setHeader('Authorization', `Bearer ${accessToken}`);
     res.cookie('refreshToken', refreshToken, {
@@ -241,7 +262,6 @@ export class AuthService {
   }
 
   private checkVerificationCode(user: Partial<User>, verificationCode: string) {
-    console.log(verificationCode, user.verificationCode);
     if (verificationCode !== user.verificationCode) {
       throw new BadRequestException('Invalid token');
     }
