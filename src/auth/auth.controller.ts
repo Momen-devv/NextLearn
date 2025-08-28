@@ -6,13 +6,13 @@ import {
   Post,
   ParseUUIDPipe,
   Res,
-  Request,
+  Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { ResendVerification } from './dto/resend-verification.dto';
 import { LoginDto } from './dto/login.dto';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
@@ -34,12 +34,18 @@ export class AuthController {
   resend(@Body() dto: ResendVerification) {
     return this.authService.resendVerificationEmail(dto);
   }
+
   @Post('login')
   login(
     @Body() dto: LoginDto,
-    @Request() req,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     return this.authService.login(dto, req, res);
+  }
+
+  @Post('refresh')
+  refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.authService.refresh(req, res);
   }
 }
