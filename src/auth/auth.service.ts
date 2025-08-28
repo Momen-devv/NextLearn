@@ -154,11 +154,34 @@ export class AuthService {
       device: deviceInfo,
     });
     await this.refreshTokensRepository.save(newRefreshToken);
-
-    // Set access token and refresh token
     this.setTokens(res, accessToken, refreshToken);
-
     return { message: 'Login successful' };
+  }
+
+  async refresh(req: Request, res: Response) {
+    const refreshToken = req.cookies['refreshToken'] as string;
+
+    if (!refreshToken) throw new UnauthorizedException('No refresh token');
+
+    const token = await this.refreshTokensRepository.findOne({
+      where: { token: refreshToken },
+      relations: ['user'],
+    });
+    if (!token || token.expires < new Date())
+      throw new UnauthorizedException('Invalid refresh token');
+
+    const payload = {
+      userId: token.user.id,
+      email: token.user.email,
+    };
+    const newAccessToken = await this.jwtService.signAsync(payload, {
+      expiresIn: '15m',
+    });
+    res.setHeader('Authorization', `Bearer ${newAccessToken}`);
+
+    return {
+      message: 'Access token refreshed',
+    };
   }
 
   private setTokens(res: Response, accessToken: string, refreshToken: string) {
