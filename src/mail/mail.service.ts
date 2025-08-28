@@ -46,4 +46,23 @@ export class MailService {
       },
     });
   }
+
+  async sendResetPassword(
+    email: string,
+    firstName: string,
+    passwordResetCode: string,
+  ) {
+    const baseUrl = this.configService.get<string>('BASE_URL');
+    const resetUrl = `${baseUrl}/auth/reset-password/${passwordResetCode}`;
+
+    await this.mailerService.sendMail({
+      to: email,
+      subject: 'Reset Your Password',
+      template: './reset-password.pug',
+      context: {
+        resetUrl,
+        firstName,
+      },
+    });
+  }
 }

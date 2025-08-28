@@ -39,6 +39,12 @@ export class User {
   @Column({ default: false })
   isEmailVerified: boolean;
 
+  @Column({ type: 'uuid', nullable: true })
+  passwordResetCode: string;
+
+  @Column({ type: 'timestamp', nullable: true })
+  passwordResetCodeExpiresAt: Date | null;
+
   @Column({
     type: 'enum',
     enum: UserRole,
