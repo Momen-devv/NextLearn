@@ -13,7 +13,8 @@ import { RegisterDto } from './dto/register.dto';
 import { ResendVerification } from './dto/resend-verification.dto';
 import { LoginDto } from './dto/login.dto';
 import type { Request, Response } from 'express';
-import { forgotPasswordDto } from './dto/forgot-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPassword } from './dto/reset-password.dto';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
@@ -51,7 +52,15 @@ export class AuthController {
   }
 
   @Post('forgot-password')
-  forgot(@Body() dto: forgotPasswordDto) {
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
+  }
+
+  @Post('reset-password/:token')
+  resetPassword(
+    @Body() dto: ResetPassword,
+    @Param('token', new ParseUUIDPipe()) token,
+  ) {
+    return this.authService.resetPassword(dto, token);
   }
 }

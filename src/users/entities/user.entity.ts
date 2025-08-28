@@ -40,7 +40,7 @@ export class User {
   isEmailVerified: boolean;
 
   @Column({ type: 'uuid', nullable: true })
-  passwordResetCode: string;
+  passwordResetCode: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
   passwordResetCodeExpiresAt: Date | null;
