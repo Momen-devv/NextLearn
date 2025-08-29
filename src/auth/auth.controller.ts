@@ -7,6 +7,8 @@ import {
   ParseUUIDPipe,
   Res,
   Req,
+  UseGuards,
+  HttpCode,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -15,6 +17,8 @@ import { LoginDto } from './dto/login.dto';
 import type { Request, Response } from 'express';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPassword } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { AuthGuard } from '../guards/auth.guard';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
@@ -38,6 +42,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @HttpCode(200)
   login(
     @Body() dto: LoginDto,
     @Req() req: Request,
@@ -62,5 +67,15 @@ export class AuthController {
     @Param('token', new ParseUUIDPipe()) token,
   ) {
     return this.authService.resetPassword(dto, token);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('change-password')
+  changePassword(
+    @Body() dto: ChangePasswordDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.authService.changePassword(dto, req, res);
   }
 }
