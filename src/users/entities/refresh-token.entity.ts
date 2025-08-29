@@ -6,6 +6,7 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 import { User } from './user.entity';
+import { IsDefined, IsNotEmpty } from 'class-validator';
 
 @Entity({ name: 'refreshTokens' })
 export class RefreshToken {
@@ -24,7 +25,9 @@ export class RefreshToken {
   @Column({ nullable: true })
   device: string;
 
-  @Column()
+  @IsDefined()
+  @IsNotEmpty()
+  @Column({ type: 'timestamp' })
   expires: Date;
 
   @CreateDateColumn()
