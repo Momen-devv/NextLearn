@@ -24,11 +24,13 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
+  @HttpCode(201)
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   @Get('verify-email/:verificationCode')
+  @HttpCode(200)
   verifyEmail(
     @Param('verificationCode', new ParseUUIDPipe())
     verificationCode: string,
@@ -37,6 +39,7 @@ export class AuthController {
   }
 
   @Post('resend-verification')
+  @HttpCode(200)
   resendVerification(@Body() dto: ResendVerification) {
     return this.authService.resendVerificationEmail(dto);
   }
@@ -52,16 +55,19 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @HttpCode(200)
   refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     return this.authService.refresh(req, res);
   }
 
   @Post('forgot-password')
+  @HttpCode(200)
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
   @Post('reset-password/:token')
+  @HttpCode(200)
   resetPassword(
     @Body() dto: ResetPassword,
     @Param('token', new ParseUUIDPipe()) token,
@@ -71,6 +77,7 @@ export class AuthController {
 
   @UseGuards(AuthGuard)
   @Post('change-password')
+  @HttpCode(200)
   changePassword(
     @Body() dto: ChangePasswordDto,
     @Req() req: Request,
