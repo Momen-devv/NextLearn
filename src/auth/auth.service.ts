@@ -18,6 +18,7 @@ import type { Request, Response } from 'express';
 import * as useragent from 'useragent';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPassword } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Injectable()
 export class AuthService {
@@ -132,21 +133,14 @@ export class AuthService {
     if (!isPasswordValid)
       throw new UnauthorizedException('Invalid email or password');
     // Genrate access token and refresh token
-    const payload = { userId: user.id, email: user.email };
-    const accessToken = await this.jwtService.signAsync(payload, {
-      expiresIn: '15m',
-    });
+    const payload = { userId: user.id };
     const refreshToken = await this.jwtService.signAsync(payload, {
       expiresIn: '10d',
     });
     // Get user device
     const ua = useragent.parse(req.headers['user-agent']);
     const deviceInfo = `${ua.os?.toString() || 'Unknown OS'} - ${ua.device?.toString() || 'Unknown Device'} - ${req.ip}`;
-    // If same user in same  device login delete old one
-    await this.refreshTokensRepository.delete({
-      user: { id: user.id },
-      device: deviceInfo,
-    });
+
     // Save refresh token in DB with info
     const newRefreshToken = this.refreshTokensRepository.create({
       token: refreshToken,
@@ -155,8 +149,17 @@ export class AuthService {
       device: deviceInfo,
     });
     await this.refreshTokensRepository.save(newRefreshToken);
+
+    const payloadAccessToken = {
+      userId: user.id,
+      sessionId: newRefreshToken.id,
+    };
+    const accessToken = await this.jwtService.signAsync(payloadAccessToken, {
+      expiresIn: '15m',
+    });
+
     this.setTokens(res, accessToken, refreshToken);
-    return { message: 'Login successful' };
+    return { message: 'Login successful', token: accessToken };
   }
   // TO DO : but refresh with sessions
   async refresh(req: Request, res: Response) {
@@ -182,6 +185,7 @@ export class AuthService {
 
     return {
       message: 'Access token refreshed',
+      token: newAccessToken,
     };
   }
 
@@ -236,6 +240,58 @@ export class AuthService {
     await this.usersRepository.save(user);
 
     return { message: 'Password reset successful' };
+  }
+
+  async changePassword(dto: ChangePasswordDto, req: Request, res: Response) {
+    const payload = req['user'];
+    const user = await this.usersRepository.findOne({
+      where: { id: payload.userId },
+    });
+
+    if (!user) throw new BadRequestException('User not found');
+    const checkOldPass = await compare(dto.oldPassword, user.password);
+    if (!checkOldPass)
+      throw new BadRequestException('Old password not correct');
+
+    const newPassword = await this.hashPassword(dto.newPassword);
+
+    user.password = newPassword;
+    await this.usersRepository.save(user);
+
+    await this.refreshTokensRepository.update(
+      { user: payload.userId },
+      { revoked: true, expires: new Date(Date.now()) },
+    );
+
+    //
+    const Setpayload = { userId: user.id };
+    const refreshToken = await this.jwtService.signAsync(Setpayload, {
+      expiresIn: '10d',
+    });
+    // Get user device
+    const ua = useragent.parse(req.headers['user-agent']);
+    const deviceInfo = `${ua.os?.toString() || 'Unknown OS'} - ${ua.device?.toString() || 'Unknown Device'} - ${req.ip}`;
+
+    // Save refresh token in DB with info
+    const newRefreshToken = this.refreshTokensRepository.create({
+      token: refreshToken,
+      user,
+      expires: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10d
+      device: deviceInfo,
+    });
+    await this.refreshTokensRepository.save(newRefreshToken);
+
+    const payloadAccessToken = {
+      userId: user.id,
+      sessionId: newRefreshToken.id,
+    };
+    const accessToken = await this.jwtService.signAsync(payloadAccessToken, {
+      expiresIn: '15m',
+    });
+
+    this.setTokens(res, accessToken, refreshToken);
+
+    return { message: 'Password changed successfully', token: accessToken };
   }
 
   private setTokens(res: Response, accessToken: string, refreshToken: string) {
