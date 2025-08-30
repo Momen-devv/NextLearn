@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
-import { RefreshToken } from './refresh-token.entity';
+import { Session } from './session.entity';
 
 export enum UserRole {
   ADMIN = 'Admin',
@@ -55,8 +55,8 @@ export class User {
   @Column({ default: false })
   isBlocked: boolean;
 
-  @OneToMany(() => RefreshToken, (refreshToken) => refreshToken.user)
-  refreshTokens: RefreshToken[];
+  @OneToMany(() => Session, (session) => session.user)
+  sessions: Session[];
 
   @CreateDateColumn()
   createdDate: Date;

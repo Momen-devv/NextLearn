@@ -1,7 +1,7 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { config } from 'dotenv';
 import { User } from '../src/users/entities/user.entity';
-import { RefreshToken } from '../src/users/entities/refresh-token.entity';
+import { Session } from '../src/users/entities/session.entity';
 
 config({ path: '.env' });
 
@@ -9,7 +9,7 @@ config({ path: '.env' });
 export const dataSourceOptions: DataSourceOptions = {
   type: 'postgres',
   url: process.env.DATABASE_URL,
-  entities: [User, RefreshToken],
+  entities: [User, Session],
   migrations: ['dist/db/migrations/*.js'],
   synchronize: true, // only for development
 };

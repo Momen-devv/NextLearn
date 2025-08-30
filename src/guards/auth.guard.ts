@@ -7,7 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request } from 'express';
-import { RefreshToken } from 'src/users/entities/refresh-token.entity';
+import { Session } from 'src/users/entities/session.entity';
 import { User } from 'src/users/entities/user.entity';
 import { Repository } from 'typeorm';
 import { JwtPayload } from 'src/types/jwt-payload.interface';
@@ -17,8 +17,8 @@ export class AuthGuard implements CanActivate {
   constructor(
     private jwtService: JwtService,
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
-    @InjectRepository(RefreshToken)
-    private readonly refreshTokensRepository: Repository<RefreshToken>,
+    @InjectRepository(Session)
+    private readonly sessionssRepository: Repository<Session>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -41,7 +41,7 @@ export class AuthGuard implements CanActivate {
       if (user.isBlocked === true)
         throw new UnauthorizedException('Account is blocked');
 
-      const session = await this.refreshTokensRepository.findOne({
+      const session = await this.sessionssRepository.findOne({
         where: { id: payload.sessionId },
       });
 

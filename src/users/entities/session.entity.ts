@@ -8,15 +8,15 @@ import {
 import { User } from './user.entity';
 import { IsDefined, IsNotEmpty } from 'class-validator';
 
-@Entity({ name: 'refreshTokens' })
-export class RefreshToken {
+@Entity({ name: 'sessions' })
+export class Session {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @Column({ unique: true })
   token: string;
 
-  @ManyToOne(() => User, (user) => user.refreshTokens)
+  @ManyToOne(() => User, (user) => user.sessions)
   user: User;
 
   @Column({ default: false })
