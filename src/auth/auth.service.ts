@@ -20,11 +20,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPassword } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtPayload } from 'src/types/jwt-payload.interface';
-
-const VERIFICATION_CODE_EXPIRATION_TIME: number = 10 * 60 * 1000; // 10 minutes
-const REFRESH_TOKEN_EXPIRATION_TIME: number = 10 * 24 * 60 * 60 * 1000; // 10 days
-const ACCESS_TOKEN_EXPIRATION_TIME: string = '15m';
-const REFRESH_TOKEN_EXPIRATION: string = '10d';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class AuthService {
@@ -34,6 +30,7 @@ export class AuthService {
     private readonly sessionsRepository: Repository<Session>,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
+    private readonly configService: ConfigService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -48,7 +45,10 @@ export class AuthService {
       const verificationCode = this.generateVerificationCode();
 
       const verificationCodeExpiresAt = new Date(
-        Date.now() + VERIFICATION_CODE_EXPIRATION_TIME,
+        (Date.now() +
+          this.configService.get(
+            'VERIFICATION_CODE_EXPIRATION_TIME',
+          )) as number,
       ); // 10 min
 
       // Add user in the db
@@ -110,7 +110,10 @@ export class AuthService {
       const verificationCode = this.generateVerificationCode();
 
       const verificationCodeExpiresAt = new Date(
-        Date.now() + VERIFICATION_CODE_EXPIRATION_TIME,
+        (Date.now() +
+          this.configService.get(
+            'VERIFICATION_CODE_EXPIRATION_TIME',
+          )) as number,
       ); // 10 min
 
       // Add user in the db
@@ -154,7 +157,7 @@ export class AuthService {
         deviceInfo,
       );
 
-      const accessToken = await this.createRAccessToken(user.id, newSession.id);
+      const accessToken = await this.createAccessToken(user.id, newSession.id);
 
       this.setTokens(res, accessToken, refreshToken);
       return {
@@ -185,7 +188,9 @@ export class AuthService {
         email: token.user.email,
       };
       const newAccessToken = await this.jwtService.signAsync(payload, {
-        expiresIn: ACCESS_TOKEN_EXPIRATION_TIME,
+        expiresIn: this.configService.get(
+          'ACCESS_TOKEN_EXPIRATION_TIME',
+        ) as string,
       });
       res.setHeader('Authorization', `Bearer ${newAccessToken}`);
 
@@ -263,7 +268,7 @@ export class AuthService {
         deviceInfo,
       );
 
-      const accessToken = await this.createRAccessToken(
+      const accessToken = await this.createAccessToken(
         user.id,
         newReSession.id,
       );
@@ -286,7 +291,9 @@ export class AuthService {
       httpOnly: true,
       secure: true,
       sameSite: 'strict',
-      maxAge: REFRESH_TOKEN_EXPIRATION_TIME,
+      maxAge: this.configService.get(
+        'REFRESH_TOKEN_COOKIES_EXPIRATION_TIME',
+      ) as number,
     });
   }
 
@@ -337,17 +344,19 @@ export class AuthService {
   private async createRefreshToken(userId: string, role: UserRole) {
     const payload = { userId, role };
     return await this.jwtService.signAsync(payload, {
-      expiresIn: REFRESH_TOKEN_EXPIRATION,
+      expiresIn: this.configService.get('REFRESH_TOKEN_EXPIRATION') as string,
     });
   }
 
-  private async createRAccessToken(userId: string, sessionId: string) {
+  private async createAccessToken(userId: string, sessionId: string) {
     const payload = {
       userId,
       sessionId,
     };
     return await this.jwtService.signAsync(payload, {
-      expiresIn: ACCESS_TOKEN_EXPIRATION_TIME,
+      expiresIn: this.configService.get(
+        'ACCESS_TOKEN_EXPIRATION_TIME',
+      ) as string,
     });
   }
 
@@ -364,7 +373,10 @@ export class AuthService {
     const newSession = this.sessionsRepository.create({
       token: refreshToken,
       user,
-      expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRATION_TIME), // 10d
+      expires: new Date(
+        (Date.now() +
+          this.configService.get('REFRESH_TOKEN_EXPIRATION_TIME')) as number,
+      ), // 10d
       device: deviceInfo,
     });
     await this.sessionsRepository.save(newSession);
@@ -374,7 +386,8 @@ export class AuthService {
 
   private async assignResetCodeToUser(user: User, resetCode: string) {
     const verificationCodeExpiresAt = new Date(
-      Date.now() + VERIFICATION_CODE_EXPIRATION_TIME,
+      (Date.now() +
+        this.configService.get('VERIFICATION_CODE_EXPIRATION_TIME')) as number,
     ); // 10 min
 
     user.passwordResetCode = resetCode;
