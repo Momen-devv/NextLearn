@@ -5,8 +5,8 @@ import {
 } from '@nestjs/common';
 import { RegisterDto } from './dto/register.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User } from 'src/users/entities/user.entity';
-import { RefreshToken } from 'src/users/entities/refresh-token.entity';
+import { User, UserRole } from 'src/users/entities/user.entity';
+import { Session } from 'src/users/entities/session.entity';
 import { Repository } from 'typeorm';
 import { hash, compare } from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
@@ -19,13 +19,19 @@ import * as useragent from 'useragent';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPassword } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { JwtPayload } from 'src/types/jwt-payload.interface';
+
+const VERIFICATION_CODE_EXPIRATION_TIME: number = 10 * 60 * 1000; // 10 minutes
+const REFRESH_TOKEN_EXPIRATION_TIME: number = 10 * 24 * 60 * 60 * 1000; // 10 days
+const ACCESS_TOKEN_EXPIRATION_TIME: string = '15m';
+const REFRESH_TOKEN_EXPIRATION: string = '10d';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
-    @InjectRepository(RefreshToken)
-    private readonly refreshTokensRepository: Repository<RefreshToken>,
+    @InjectRepository(Session)
+    private readonly sessionsRepository: Repository<Session>,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
   ) {}
@@ -41,7 +47,10 @@ export class AuthService {
       // Genrate verification code
       const verificationCode = this.generateVerificationCode();
 
-      const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+      const verificationCodeExpiresAt = new Date(
+        Date.now() + VERIFICATION_CODE_EXPIRATION_TIME,
+      ); // 10 min
+
       // Add user in the db
       const user = await this.createUser({
         ...dto,
@@ -69,7 +78,10 @@ export class AuthService {
   // GET /auth/verify-email/:verificationCode
   async verifyEmail(verificationCode: string) {
     try {
-      const user = await this.ensureUserExists(verificationCode);
+      const user = await this.ensureUserExists(
+        'verificationCode',
+        verificationCode,
+      );
 
       this.checkVerificationCode(user, verificationCode);
 
@@ -91,24 +103,16 @@ export class AuthService {
   // post /auth/resend-verification
   async resendVerificationEmail(dto: ResendVerification) {
     try {
-      const user = await this.usersRepository.findOne({
-        where: { email: dto.email },
-      });
-      if (!user) throw new BadRequestException('No user found with this email');
-      if (user.isEmailVerified === true)
-        throw new BadRequestException('user account already verified');
+      const user = await this.ensureUserExists('email', dto.email);
 
-      if (
-        user.verificationCodeExpiresAt &&
-        user.verificationCodeExpiresAt > new Date()
-      )
-        throw new BadRequestException(
-          'A verification email has already been sent and is still valid. Please check your inbox.',
-        );
+      this.checkEmailVerificationStatus(user);
 
       const verificationCode = this.generateVerificationCode();
 
-      const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+      const verificationCodeExpiresAt = new Date(
+        Date.now() + VERIFICATION_CODE_EXPIRATION_TIME,
+      ); // 10 min
+
       // Add user in the db
       await this.usersRepository.update(
         { id: user.id },
@@ -134,46 +138,23 @@ export class AuthService {
   // POST /auth/login
   async login(dto: LoginDto, req: Request, res: Response) {
     try {
-      const user = await this.usersRepository.findOne({
-        where: { email: dto.email },
-      });
+      const user = await this.ensureUserExists('email', dto.email);
 
-      if (!user)
-        throw new BadRequestException(
-          'there is no user with this email, try register',
-        );
+      await this.validateLoginCredentials(user, dto);
 
-      if (!user.isEmailVerified)
-        throw new UnauthorizedException('Email not verified');
-
-      const isPasswordValid = await compare(dto.password, user.password);
-      if (!isPasswordValid)
-        throw new UnauthorizedException('Invalid email or password');
       // Genrate access token and refresh token
-      const payload = { userId: user.id };
-      const refreshToken = await this.jwtService.signAsync(payload, {
-        expiresIn: '10d',
-      });
+      const refreshToken = await this.createRefreshToken(user.id, user.role);
       // Get user device
-      const ua = useragent.parse(req.headers['user-agent']);
-      const deviceInfo = `${ua.os?.toString() || 'Unknown OS'} - ${ua.device?.toString() || 'Unknown Device'} - ${req.ip}`;
+      const deviceInfo = this.getDeciceInfo(req);
 
-      // Save refresh token in DB with info
-      const newRefreshToken = this.refreshTokensRepository.create({
-        token: refreshToken,
+      // Save Session with refresh token in DB with info
+      const newSession = await this.createSession(
+        refreshToken,
         user,
-        expires: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10d
-        device: deviceInfo,
-      });
-      await this.refreshTokensRepository.save(newRefreshToken);
+        deviceInfo,
+      );
 
-      const payloadAccessToken = {
-        userId: user.id,
-        sessionId: newRefreshToken.id,
-      };
-      const accessToken = await this.jwtService.signAsync(payloadAccessToken, {
-        expiresIn: '15m',
-      });
+      const accessToken = await this.createRAccessToken(user.id, newSession.id);
 
       this.setTokens(res, accessToken, refreshToken);
       return {
@@ -192,7 +173,7 @@ export class AuthService {
 
       if (!refreshToken) throw new UnauthorizedException('No refresh token');
 
-      const token = await this.refreshTokensRepository.findOne({
+      const token = await this.sessionsRepository.findOne({
         where: { token: refreshToken },
         relations: ['user'],
       });
@@ -204,7 +185,7 @@ export class AuthService {
         email: token.user.email,
       };
       const newAccessToken = await this.jwtService.signAsync(payload, {
-        expiresIn: '15m',
+        expiresIn: ACCESS_TOKEN_EXPIRATION_TIME,
       });
       res.setHeader('Authorization', `Bearer ${newAccessToken}`);
 
@@ -222,27 +203,11 @@ export class AuthService {
 
   async forgotPassword(dto: ForgotPasswordDto) {
     try {
-      const user = await this.usersRepository.findOne({
-        where: { email: dto.email },
-      });
-      if (!user)
-        throw new BadRequestException('There is no user with this email');
-
-      if (
-        user.passwordResetCodeExpiresAt &&
-        user.passwordResetCodeExpiresAt > new Date()
-      )
-        throw new BadRequestException(
-          'A email has already been sent and is still valid. Please check your inbox.',
-        );
+      const user = await this.ensureUserExists('email', dto.email);
 
       const resetCode = this.generateVerificationCode();
-      const verificationCodeExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
-      user.passwordResetCode = resetCode;
-      user.passwordResetCodeExpiresAt = verificationCodeExpiresAt;
-
-      await this.usersRepository.save(user);
+      await this.assignResetCodeToUser(user, resetCode);
 
       await this.mailService.sendResetPassword(
         user.email,
@@ -258,22 +223,13 @@ export class AuthService {
 
   async resetPassword(dto: ResetPassword, token: string) {
     try {
-      const user = await this.usersRepository.findOne({
-        where: { passwordResetCode: token },
-      });
-      if (!user) throw new BadRequestException('User not found');
-      if (
-        user.passwordResetCodeExpiresAt &&
-        user.passwordResetCodeExpiresAt < new Date()
-      )
-        throw new BadRequestException('Token invalid or expired');
+      const user = await this.ensureUserExists('passwordResetCode', token);
+
+      this.checkPasswordResetStatus(user);
 
       const newPassword = await this.hashPassword(dto.password);
 
-      user.password = newPassword;
-      user.passwordResetCode = null;
-      user.passwordResetCodeExpiresAt = null;
-      await this.usersRepository.save(user);
+      await this.updateUserPasswordAfterReset(user, newPassword);
 
       return { message: 'Password reset successful', status: 200 };
     } catch (error) {
@@ -283,51 +239,34 @@ export class AuthService {
 
   async changePassword(dto: ChangePasswordDto, req: Request, res: Response) {
     try {
-      const payload = req['user'];
-      const user = await this.usersRepository.findOne({
-        where: { id: payload.userId },
-      });
+      const payload = req['user'] as JwtPayload;
 
-      if (!user) throw new BadRequestException('User not found');
-      const checkOldPass = await compare(dto.oldPassword, user.password);
-      if (!checkOldPass)
-        throw new BadRequestException('Old password not correct');
+      const user = await this.ensureUserExists('id', payload.userId);
 
-      const newPassword = await this.hashPassword(dto.newPassword);
+      await this.checkOldPasswordCorrect(dto.oldPassword, user.password);
 
-      user.password = newPassword;
-      await this.usersRepository.save(user);
+      await this.setNewPassword(user, dto.newPassword);
 
-      await this.refreshTokensRepository.update(
-        { user: payload.userId },
+      await this.sessionsRepository.update(
+        { user: { id: payload.userId } },
         { revoked: true, expires: new Date(Date.now()) },
       );
 
-      //
-      const Setpayload = { userId: user.id };
-      const refreshToken = await this.jwtService.signAsync(Setpayload, {
-        expiresIn: '10d',
-      });
+      const refreshToken = await this.createRefreshToken(user.id, user.role);
       // Get user device
-      const ua = useragent.parse(req.headers['user-agent']);
-      const deviceInfo = `${ua.os?.toString() || 'Unknown OS'} - ${ua.device?.toString() || 'Unknown Device'} - ${req.ip}`;
+      const deviceInfo = this.getDeciceInfo(req);
 
-      // Save refresh token in DB with info
-      const newRefreshToken = this.refreshTokensRepository.create({
-        token: refreshToken,
+      // Save session with refresh token in DB with info
+      const newReSession = await this.createSession(
+        refreshToken,
         user,
-        expires: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10d
-        device: deviceInfo,
-      });
-      await this.refreshTokensRepository.save(newRefreshToken);
+        deviceInfo,
+      );
 
-      const payloadAccessToken = {
-        userId: user.id,
-        sessionId: newRefreshToken.id,
-      };
-      const accessToken = await this.jwtService.signAsync(payloadAccessToken, {
-        expiresIn: '15m',
-      });
+      const accessToken = await this.createRAccessToken(
+        user.id,
+        newReSession.id,
+      );
 
       this.setTokens(res, accessToken, refreshToken);
 
@@ -347,7 +286,7 @@ export class AuthService {
       httpOnly: true,
       secure: true,
       sameSite: 'strict',
-      maxAge: 10 * 24 * 60 * 60 * 1000,
+      maxAge: REFRESH_TOKEN_EXPIRATION_TIME,
     });
   }
 
@@ -356,15 +295,117 @@ export class AuthService {
     if (user) throw new BadRequestException('User already exists');
   }
 
-  private async ensureUserExists(verificationCode: string) {
+  private async ensureUserExists(field: string, value: string) {
     const user = await this.usersRepository.findOne({
-      where: { verificationCode: verificationCode },
+      where: { [field]: value },
     });
-    if (!user) throw new BadRequestException('No user found');
+    if (!user)
+      throw new BadRequestException(`No user found with ${field}: ${value}`);
     return user;
   }
 
-  private checkVerificationCode(user: Partial<User>, verificationCode: string) {
+  private checkEmailVerificationStatus(user: User) {
+    if (user.isEmailVerified === true)
+      throw new BadRequestException('user account already verified');
+
+    if (
+      user.verificationCodeExpiresAt &&
+      user.verificationCodeExpiresAt > new Date()
+    )
+      throw new BadRequestException(
+        'A verification email has already been sent and is still valid. Please check your inbox.',
+      );
+  }
+
+  private checkPasswordResetStatus(user: User) {
+    if (
+      user.passwordResetCodeExpiresAt &&
+      user.passwordResetCodeExpiresAt < new Date()
+    )
+      throw new BadRequestException('Token invalid or expired');
+  }
+
+  private async validateLoginCredentials(user: User, dto: LoginDto) {
+    if (!user.isEmailVerified)
+      throw new UnauthorizedException('Email not verified');
+
+    const isPasswordValid = await compare(dto.password, user.password);
+    if (!isPasswordValid)
+      throw new UnauthorizedException('Invalid email or password');
+  }
+
+  private async createRefreshToken(userId: string, role: UserRole) {
+    const payload = { userId, role };
+    return await this.jwtService.signAsync(payload, {
+      expiresIn: REFRESH_TOKEN_EXPIRATION,
+    });
+  }
+
+  private async createRAccessToken(userId: string, sessionId: string) {
+    const payload = {
+      userId,
+      sessionId,
+    };
+    return await this.jwtService.signAsync(payload, {
+      expiresIn: ACCESS_TOKEN_EXPIRATION_TIME,
+    });
+  }
+
+  private getDeciceInfo(req: Request) {
+    const ua = useragent.parse(req.headers['user-agent']);
+    return `${ua.os?.toString() || 'Unknown OS'} - ${ua.device?.toString() || 'Unknown Device'} - ${req.ip}`;
+  }
+
+  private async createSession(
+    refreshToken: string,
+    user: User,
+    deviceInfo: string,
+  ) {
+    const newSession = this.sessionsRepository.create({
+      token: refreshToken,
+      user,
+      expires: new Date(Date.now() + REFRESH_TOKEN_EXPIRATION_TIME), // 10d
+      device: deviceInfo,
+    });
+    await this.sessionsRepository.save(newSession);
+
+    return newSession;
+  }
+
+  private async assignResetCodeToUser(user: User, resetCode: string) {
+    const verificationCodeExpiresAt = new Date(
+      Date.now() + VERIFICATION_CODE_EXPIRATION_TIME,
+    ); // 10 min
+
+    user.passwordResetCode = resetCode;
+    user.passwordResetCodeExpiresAt = verificationCodeExpiresAt;
+
+    await this.usersRepository.save(user);
+  }
+
+  private async updateUserPasswordAfterReset(user: User, newPassword: string) {
+    user.password = newPassword;
+    user.passwordResetCode = null;
+    user.passwordResetCodeExpiresAt = null;
+    await this.usersRepository.save(user);
+  }
+
+  private async checkOldPasswordCorrect(
+    oldPassword: string,
+    userPassword: string,
+  ) {
+    const checkOldPass = await compare(oldPassword, userPassword);
+    if (!checkOldPass)
+      throw new BadRequestException('Old password not correct');
+  }
+
+  private async setNewPassword(user: User, newPassword: string) {
+    const newPass = await this.hashPassword(newPassword);
+    user.password = newPass;
+    await this.usersRepository.save(user);
+  }
+
+  private checkVerificationCode(user: User, verificationCode: string) {
     if (verificationCode !== user.verificationCode) {
       throw new BadRequestException('Invalid token');
     }
@@ -400,10 +441,6 @@ export class AuthService {
 
   private hashPassword(password: string): Promise<string> {
     return hash(password, 10);
-  }
-
-  private generateToken(userId: number, userRole: string): Promise<string> {
-    return this.jwtService.signAsync({ userId, userRole });
   }
 
   private generateVerificationCode(): string {
