@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
-import { Session } from './session.entity';
+import { Session } from '../../sessions/entities/session.entity';
 
 export enum UserRole {
   ADMIN = 'Admin',

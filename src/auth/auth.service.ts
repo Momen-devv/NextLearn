@@ -6,7 +6,7 @@ import {
 import { RegisterDto } from './dto/register.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User, UserRole } from 'src/users/entities/user.entity';
-import { Session } from 'src/users/entities/session.entity';
+import { Session } from 'src/sessions/entities/session.entity';
 import { Repository } from 'typeorm';
 import { hash, compare } from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
@@ -45,10 +45,10 @@ export class AuthService {
       const verificationCode = this.generateVerificationCode();
 
       const verificationCodeExpiresAt = new Date(
-        (Date.now() +
-          this.configService.get(
-            'VERIFICATION_CODE_EXPIRATION_TIME',
-          )) as number,
+        Date.now() +
+          Number(
+            this.configService.get<number>('VERIFICATION_CODE_EXPIRATION_TIME'),
+          ),
       ); // 10 min
 
       // Add user in the db
@@ -71,7 +71,7 @@ export class AuthService {
         status: 201,
       };
     } catch (error) {
-      throw new BadRequestException('Registration failed');
+      throw new BadRequestException(error, 'Registration failed');
     }
   }
 
@@ -110,10 +110,8 @@ export class AuthService {
       const verificationCode = this.generateVerificationCode();
 
       const verificationCodeExpiresAt = new Date(
-        (Date.now() +
-          this.configService.get(
-            'VERIFICATION_CODE_EXPIRATION_TIME',
-          )) as number,
+        Date.now() +
+          Number(this.configService.get('VERIFICATION_CODE_EXPIRATION_TIME')),
       ); // 10 min
 
       // Add user in the db
@@ -149,14 +147,13 @@ export class AuthService {
       const refreshToken = await this.createRefreshToken(user.id, user.role);
       // Get user device
       const deviceInfo = this.getDeciceInfo(req);
-
       // Save Session with refresh token in DB with info
       const newSession = await this.createSession(
         refreshToken,
         user,
         deviceInfo,
       );
-
+      console.log(newSession);
       const accessToken = await this.createAccessToken(user.id, newSession.id);
 
       this.setTokens(res, accessToken, refreshToken);
@@ -167,42 +164,6 @@ export class AuthService {
       };
     } catch (error) {
       throw new BadRequestException('Login failed');
-    }
-  }
-  // TO DO : but refresh with sessions
-  async refresh(req: Request, res: Response) {
-    try {
-      const refreshToken = req.cookies['refreshToken'] as string;
-
-      if (!refreshToken) throw new UnauthorizedException('No refresh token');
-
-      const token = await this.sessionsRepository.findOne({
-        where: { token: refreshToken },
-        relations: ['user'],
-      });
-      if (!token || token.expires < new Date())
-        throw new UnauthorizedException('Invalid refresh token');
-
-      const payload = {
-        userId: token.user.id,
-        email: token.user.email,
-      };
-      const newAccessToken = await this.jwtService.signAsync(payload, {
-        expiresIn: this.configService.get(
-          'ACCESS_TOKEN_EXPIRATION_TIME',
-        ) as string,
-      });
-      res.setHeader('Authorization', `Bearer ${newAccessToken}`);
-
-      return {
-        message: 'Access token refreshed',
-        status: 200,
-        data: {
-          token: newAccessToken,
-        },
-      };
-    } catch (error) {
-      throw new BadRequestException('refresh failed');
     }
   }
 
@@ -234,7 +195,11 @@ export class AuthService {
 
       const newPassword = await this.hashPassword(dto.password);
 
-      await this.updateUserPasswordAfterReset(user, newPassword);
+      await this.updateUser(user.id, {
+        password: newPassword,
+        passwordResetCode: null,
+        passwordResetCodeExpiresAt: null,
+      });
 
       return { message: 'Password reset successful', status: 200 };
     } catch (error) {
@@ -291,9 +256,9 @@ export class AuthService {
       httpOnly: true,
       secure: true,
       sameSite: 'strict',
-      maxAge: this.configService.get(
-        'REFRESH_TOKEN_COOKIES_EXPIRATION_TIME',
-      ) as number,
+      maxAge: Number(
+        this.configService.get('REFRESH_TOKEN_COOKIES_EXPIRATION_TIME'),
+      ),
     });
   }
 
@@ -374,20 +339,20 @@ export class AuthService {
       token: refreshToken,
       user,
       expires: new Date(
-        (Date.now() +
-          this.configService.get('REFRESH_TOKEN_EXPIRATION_TIME')) as number,
+        Date.now() +
+          Number(this.configService.get('REFRESH_TOKEN_EXPIRATION_TIME')),
       ), // 10d
       device: deviceInfo,
     });
     await this.sessionsRepository.save(newSession);
-
+    console.log(user);
     return newSession;
   }
 
   private async assignResetCodeToUser(user: User, resetCode: string) {
     const verificationCodeExpiresAt = new Date(
-      (Date.now() +
-        this.configService.get('VERIFICATION_CODE_EXPIRATION_TIME')) as number,
+      Date.now() +
+        Number(this.configService.get('VERIFICATION_CODE_EXPIRATION_TIME')),
     ); // 10 min
 
     user.passwordResetCode = resetCode;
@@ -396,11 +361,8 @@ export class AuthService {
     await this.usersRepository.save(user);
   }
 
-  private async updateUserPasswordAfterReset(user: User, newPassword: string) {
-    user.password = newPassword;
-    user.passwordResetCode = null;
-    user.passwordResetCodeExpiresAt = null;
-    await this.usersRepository.save(user);
+  private async updateUser(userId: string, data: Partial<User>) {
+    await this.usersRepository.update({ id: userId }, data);
   }
 
   private async checkOldPasswordCorrect(
@@ -434,10 +396,6 @@ export class AuthService {
   private async createUser(data: Partial<User>): Promise<User> {
     const user = this.usersRepository.create(data);
     return await this.usersRepository.save(user);
-  }
-
-  private async updateUser(userId: string, data: Partial<User>) {
-    await this.usersRepository.update({ id: userId }, data);
   }
 
   private async sendVerificationMail(

@@ -1,7 +1,7 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { config } from 'dotenv';
 import { User } from '../src/users/entities/user.entity';
-import { Session } from '../src/users/entities/session.entity';
+import { Session } from '../src/sessions/entities/session.entity';
 
 config({ path: '.env' });
 

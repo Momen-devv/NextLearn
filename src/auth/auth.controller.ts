@@ -54,12 +54,6 @@ export class AuthController {
     return this.authService.login(dto, req, res);
   }
 
-  @Post('refresh')
-  @HttpCode(200)
-  refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    return this.authService.refresh(req, res);
-  }
-
   @Post('forgot-password')
   @HttpCode(200)
   forgotPassword(@Body() dto: ForgotPasswordDto) {

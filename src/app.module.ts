@@ -9,6 +9,7 @@ import { dataSourceOptions } from '../db/data-source';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { MailModule } from './mail/mail.module';
+import { SessionsModule } from './sessions/sessions.module';
 @Module({
   imports: [
     ThrottlerModule.forRoot([
@@ -35,6 +36,7 @@ import { MailModule } from './mail/mail.module';
     AuthModule,
     UsersModule,
     MailModule,
+    SessionsModule,
   ],
   controllers: [AppController],
   providers: [
