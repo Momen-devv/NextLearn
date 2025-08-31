@@ -21,40 +21,36 @@ export class SessionsService {
   ) {}
 
   async refresh(req: Request, res: Response) {
-    try {
-      const refreshToken = req.cookies['refreshToken'] as string;
+    const refreshToken = req.cookies['refreshToken'] as string;
 
-      if (!refreshToken) throw new UnauthorizedException('No refresh token');
+    if (!refreshToken) throw new UnauthorizedException('No refresh token');
 
-      const session = await this.sessionsRepository.findOne({
-        where: { token: refreshToken },
-        relations: ['user'],
-      });
-      if (!session || session.expires < new Date() || session.revoked === true)
-        throw new UnauthorizedException('Invalid refresh token');
+    const session = await this.sessionsRepository.findOne({
+      where: { token: refreshToken },
+      relations: ['user'],
+    });
+    if (!session || session.expires < new Date() || session.revoked === true)
+      throw new UnauthorizedException('Invalid refresh token');
 
-      const payload = {
-        userId: session?.user.id,
-        sessionId: session?.id,
-        role: session?.user.role,
-      } as JwtPayload;
+    const payload = {
+      userId: session?.user.id,
+      sessionId: session?.id,
+      role: session?.user.role,
+    } as JwtPayload;
 
-      const newAccessToken = await this.jwtService.signAsync(payload, {
-        expiresIn: this.configService.get(
-          'ACCESS_TOKEN_EXPIRATION_TIME',
-        ) as string,
-      });
-      res.setHeader('Authorization', `Bearer ${newAccessToken}`);
+    const newAccessToken = await this.jwtService.signAsync(payload, {
+      expiresIn: this.configService.get(
+        'ACCESS_TOKEN_EXPIRATION_TIME',
+      ) as string,
+    });
+    res.setHeader('Authorization', `Bearer ${newAccessToken}`);
 
-      return {
-        message: 'Access token refreshed',
-        status: 200,
-        data: {
-          token: newAccessToken,
-        },
-      };
-    } catch (error) {
-      throw new BadRequestException('refresh failed');
-    }
+    return {
+      message: 'Access token refreshed',
+      status: 200,
+      data: {
+        token: newAccessToken,
+      },
+    };
   }
 }
