@@ -6,7 +6,10 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { dataSourceOptions } from '../db/data-source';
-
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { MailModule } from './mail/mail.module';
+import { SessionsModule } from './sessions/sessions.module';
 @Module({
   imports: [
     ThrottlerModule.forRoot([
@@ -30,6 +33,10 @@ import { dataSourceOptions } from '../db/data-source';
       isGlobal: true,
     }),
     TypeOrmModule.forRoot(dataSourceOptions),
+    AuthModule,
+    UsersModule,
+    MailModule,
+    SessionsModule,
   ],
   controllers: [AppController],
   providers: [
