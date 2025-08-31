@@ -19,16 +19,19 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPassword } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuthGuard } from '../guards/auth.guard';
+import { Throttle } from '@nestjs/throttler';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  @Throttle({ public: {} })
   @Post('register')
   @HttpCode(201)
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
+  @Throttle({ sensitive: {} })
   @Get('verify-email/:verificationCode')
   @HttpCode(200)
   verifyEmail(
@@ -38,12 +41,14 @@ export class AuthController {
     return this.authService.verifyEmail(verificationCode);
   }
 
+  @Throttle({ sensitive: {} })
   @Post('resend-verification')
   @HttpCode(200)
   resendVerification(@Body() dto: ResendVerification) {
     return this.authService.resendVerificationEmail(dto);
   }
 
+  @Throttle({ public: {} })
   @Post('login')
   @HttpCode(200)
   login(
@@ -54,12 +59,14 @@ export class AuthController {
     return this.authService.login(dto, req, res);
   }
 
+  @Throttle({ sensitive: {} })
   @Post('forgot-password')
   @HttpCode(200)
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
 
+  @Throttle({ sensitive: {} })
   @Post('reset-password/:token')
   @HttpCode(200)
   resetPassword(
@@ -70,6 +77,7 @@ export class AuthController {
   }
 
   @UseGuards(AuthGuard)
+  @Throttle({ sensitive: {} })
   @Post('change-password')
   @HttpCode(200)
   changePassword(
