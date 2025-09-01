@@ -46,4 +46,11 @@ export class SessionsController {
   ) {
     return this.sessionsService.revokeSession(sessionId, req);
   }
+
+  @UseGuards(AuthGuard)
+  @Post('revoke-all-sessions')
+  @HttpCode(200)
+  revokeAllSessions(@Req() req: Request) {
+    return this.sessionsService.revokeAllSessions(req);
+  }
 }
