@@ -114,4 +114,25 @@ export class SessionsService {
 
     return { status: 200, message: 'Session revoked successfully' };
   }
+
+  async revokeAllSessions(req: Request) {
+    const { userId, sessionId } = req['user'] as JwtPayload;
+
+    if (!sessionId)
+      throw new BadRequestException('Session ID not found in token');
+
+    await this.sessionsRepository
+      .createQueryBuilder()
+      .update(Session)
+      .set({ revoked: true })
+      .where('userId = :userId', { userId })
+      .andWhere('id != :sessionId', { sessionId })
+      .andWhere('revoked = :revoked', { revoked: false })
+      .execute();
+
+    return {
+      success: true,
+      message: 'All sessions revoked except current',
+    };
+  }
 }
