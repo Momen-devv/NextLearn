@@ -1,5 +1,6 @@
 import {
   Controller,
+  Get,
   HttpCode,
   Post,
   Req,
@@ -13,6 +14,13 @@ import { AuthGuard } from 'src/guards/auth.guard';
 @Controller('sessions')
 export class SessionsController {
   constructor(private sessionsService: SessionsService) {}
+
+  @UseGuards(AuthGuard)
+  @Get()
+  @HttpCode(200)
+  sessions(@Req() req: Request) {
+    return this.sessionsService.sessions(req);
+  }
 
   @Post('refresh')
   @HttpCode(200)
