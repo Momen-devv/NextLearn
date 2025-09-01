@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -48,5 +52,28 @@ export class SessionsService {
         token: newAccessToken,
       },
     };
+  }
+
+  async logout(req: Request, res: Response) {
+    const payload = req['user'] as JwtPayload;
+
+    const session = await this.sessionsRepository.findOne({
+      where: { id: payload.sessionId },
+    });
+    if (!session) throw new BadRequestException('Session not found');
+
+    session.revoked = true;
+
+    await this.sessionsRepository.save(session);
+
+    res.clearCookie('refreshToken', {
+      maxAge: 0,
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: true,
+      path: '/',
+    });
+
+    return { status: 200, message: 'Logged out successfully' };
   }
 }

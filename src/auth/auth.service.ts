@@ -234,6 +234,7 @@ export class AuthService {
       httpOnly: true,
       secure: true,
       sameSite: 'strict',
+      path: '/',
       maxAge: Number(
         this.configService.get('REFRESH_TOKEN_COOKIES_EXPIRATION_TIME'),
       ),
