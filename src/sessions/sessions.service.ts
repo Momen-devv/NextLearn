@@ -82,7 +82,6 @@ export class SessionsService {
     if (!session) throw new BadRequestException('Session not found');
 
     session.revoked = true;
-    session.expires = new Date(Date.now());
 
     await this.sessionsRepository.save(session);
 
@@ -95,5 +94,24 @@ export class SessionsService {
     });
 
     return { status: 200, message: 'Logged out successfully' };
+  }
+
+  async revokeSession(sessionId: string, req: Request) {
+    const { userId } = req['user'] as JwtPayload;
+
+    const session = await this.sessionsRepository.findOne({
+      where: { id: sessionId },
+      relations: ['user'],
+    });
+
+    if (!session) throw new BadRequestException('Session not found');
+    if (session.user.id !== userId)
+      throw new BadRequestException('You cant do this action');
+
+    session.revoked = true;
+
+    await this.sessionsRepository.save(session);
+
+    return { status: 200, message: 'Session revoked successfully' };
   }
 }
