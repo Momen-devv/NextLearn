@@ -9,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Request, Response } from 'express';
 import { Session } from './entities/session.entity';
 import { JwtPayload } from 'src/types/jwt-payload.interface';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 
 @Injectable()
 export class SessionsService {
@@ -19,6 +19,25 @@ export class SessionsService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
+
+  async sessions(req: Request) {
+    const payload = req['user'] as JwtPayload;
+
+    const sessions = await this.sessionsRepository.find({
+      where: {
+        user: { id: payload.userId },
+        revoked: false,
+        expires: MoreThan(new Date()),
+      },
+      select: ['id', 'device', 'createdAt', 'expires'],
+    });
+
+    return {
+      message: 'Get active sessions successfully',
+      status: 200,
+      data: { sessions },
+    };
+  }
 
   async refresh(req: Request, res: Response) {
     const refreshToken = req.cookies['refreshToken'] as string;
@@ -63,6 +82,7 @@ export class SessionsService {
     if (!session) throw new BadRequestException('Session not found');
 
     session.revoked = true;
+    session.expires = new Date(Date.now());
 
     await this.sessionsRepository.save(session);
 
