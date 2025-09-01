@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   HttpCode,
+  Param,
+  ParseUUIDPipe,
   Post,
   Req,
   Res,
@@ -33,5 +35,15 @@ export class SessionsController {
   @HttpCode(200)
   logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     return this.sessionsService.logout(req, res);
+  }
+
+  @UseGuards(AuthGuard)
+  @Post('revoke-session/:sessionId')
+  @HttpCode(200)
+  revokeSession(
+    @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
+    @Req() req: Request,
+  ) {
+    return this.sessionsService.revokeSession(sessionId, req);
   }
 }
