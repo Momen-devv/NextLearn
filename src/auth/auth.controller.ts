@@ -18,7 +18,7 @@ import type { Request, Response } from 'express';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPassword } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { AuthGuard } from '../guards/auth.guard';
+import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 @Controller('auth')
 export class AuthController {
@@ -76,7 +76,7 @@ export class AuthController {
     return this.authService.resetPassword(dto, token);
   }
 
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard('jwt'))
   @Throttle({ sensitive: {} })
   @Post('change-password')
   @HttpCode(200)
