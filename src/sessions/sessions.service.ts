@@ -10,6 +10,7 @@ import type { Request, Response } from 'express';
 import { Session } from './entities/session.entity';
 import { JwtPayload } from 'src/types/jwt-payload.interface';
 import { MoreThan, Repository } from 'typeorm';
+import { CleanupSessionDto } from './dto/cleanup-session.dto';
 
 @Injectable()
 export class SessionsService {
@@ -34,7 +35,7 @@ export class SessionsService {
 
     return {
       message: 'Get active sessions successfully',
-      status: 200,
+      success: true,
       data: { sessions },
     };
   }
@@ -54,7 +55,6 @@ export class SessionsService {
     const payload = {
       userId: session?.user.id,
       sessionId: session?.id,
-      role: session?.user.role,
     } as JwtPayload;
 
     const newAccessToken = await this.jwtService.signAsync(payload, {
@@ -66,7 +66,7 @@ export class SessionsService {
 
     return {
       message: 'Access token refreshed',
-      status: 200,
+      success: true,
       data: {
         token: newAccessToken,
       },
@@ -93,7 +93,7 @@ export class SessionsService {
       path: '/',
     });
 
-    return { status: 200, message: 'Logged out successfully' };
+    return { success: true, message: 'Logged out successfully' };
   }
 
   async revokeSession(sessionId: string, req: Request) {
@@ -112,7 +112,7 @@ export class SessionsService {
 
     await this.sessionsRepository.save(session);
 
-    return { status: 200, message: 'Session revoked successfully' };
+    return { success: true, message: 'Session revoked successfully' };
   }
 
   async revokeAllSessions(req: Request) {
@@ -133,6 +133,25 @@ export class SessionsService {
     return {
       success: true,
       message: 'All sessions revoked except current',
+    };
+  }
+
+  async cleanupSessions(dto: CleanupSessionDto) {
+    if (!dto.confirm) {
+      throw new BadRequestException('Confirmation required');
+    }
+    const NOW = new Date(Date.now());
+
+    const sessions = await this.sessionsRepository
+      .createQueryBuilder()
+      .delete()
+      .where('revoked = true OR expires < :NOW', { NOW })
+      .execute();
+
+    return {
+      success: true,
+      message: 'Sessions cleaned up',
+      deletedCount: sessions.affected,
     };
   }
 }
