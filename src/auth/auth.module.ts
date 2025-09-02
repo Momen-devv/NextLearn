@@ -7,22 +7,29 @@ import { Session } from 'src/sessions/entities/session.entity';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { MailModule } from 'src/mail/mail.module';
+import { PassportModule } from '@nestjs/passport';
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { forwardRef } from '@nestjs/common';
+import { SharedModule } from 'src/Shared/shard.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([User, Session]),
-    JwtModule.registerAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        return {
-          global: true,
-          secret: config.get<string>('JWT_SECRET'),
-        };
-      },
-    }),
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    forwardRef(() => SharedModule),
+    // JwtModule,
+    // JwtModule.registerAsync({
+    //   inject: [ConfigService],
+    //   useFactory: (config: ConfigService) => {
+    //     return {
+    //       global: true,
+    //       secret: config.get<string>('JWT_SECRET'),
+    //     };
+    //   },
+    // }),
     MailModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, JwtStrategy],
 })
 export class AuthModule {}

@@ -10,8 +10,10 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { MailModule } from './mail/mail.module';
 import { SessionsModule } from './sessions/sessions.module';
+import { SharedModule } from './Shared/shard.module';
 @Module({
   imports: [
+    SharedModule,
     ThrottlerModule.forRoot([
       {
         name: 'sensitive', // For highly sensitive routes like OTP or password reset
