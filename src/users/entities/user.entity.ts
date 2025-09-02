@@ -7,11 +7,7 @@ import {
   OneToMany,
 } from 'typeorm';
 import { Session } from '../../sessions/entities/session.entity';
-
-export enum UserRole {
-  ADMIN = 'Admin',
-  USER = 'User',
-}
+import { UserRole } from 'src/enums/user-role.enum';
 
 @Entity({ name: 'users' })
 export class User {
@@ -50,7 +46,7 @@ export class User {
     enum: UserRole,
     default: UserRole.USER,
   })
-  role: UserRole;
+  roles: UserRole[];
 
   @Column({ default: false })
   isBlocked: boolean;

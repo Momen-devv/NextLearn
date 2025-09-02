@@ -5,7 +5,8 @@ import {
 } from '@nestjs/common';
 import { RegisterDto } from './dto/register.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User, UserRole } from 'src/users/entities/user.entity';
+import { User } from 'src/users/entities/user.entity';
+import { UserRole } from 'src/enums/user-role.enum';
 import { Session } from 'src/sessions/entities/session.entity';
 import { Repository } from 'typeorm';
 import { hash, compare } from 'bcrypt';
@@ -140,7 +141,7 @@ export class AuthService {
     if (!isPasswordValid)
       throw new UnauthorizedException('Invalid email or password');
 
-    const refreshToken = await this.createRefreshToken(user.id, user.role);
+    const refreshToken = await this.createRefreshToken(user.id, user.roles);
     const deviceInfo = this.getDeviceInfo(req);
     const newSession = await this.createSession(refreshToken, user, deviceInfo);
     const accessToken = await this.createAccessToken(user.id, newSession.id);
@@ -213,7 +214,7 @@ export class AuthService {
       { revoked: true, expires: new Date(Date.now()) },
     );
 
-    const refreshToken = await this.createRefreshToken(user.id, user.role);
+    const refreshToken = await this.createRefreshToken(user.id, user.roles);
     const deviceInfo = this.getDeviceInfo(req);
     const newSession = await this.createSession(refreshToken, user, deviceInfo);
     const accessToken = await this.createAccessToken(user.id, newSession.id);
@@ -251,8 +252,8 @@ export class AuthService {
     return user;
   }
 
-  private async createRefreshToken(userId: string, role: UserRole) {
-    const payload = { userId, role };
+  private async createRefreshToken(userId: string, roles: UserRole[]) {
+    const payload = { userId, roles };
     return await this.jwtService.signAsync(payload, {
       expiresIn: this.configService.get('REFRESH_TOKEN_EXPIRATION') as string,
     });
