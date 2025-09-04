@@ -66,7 +66,7 @@ export class SessionsService {
 
     if (!session || session.expires < new Date() || session.revoked === true)
       throw new UnauthorizedException('Invalid refresh token');
-    // Genrate new refresh token and save it
+    // Genrate new refresh every refresh token and save it
     const newRefreshToken = crypto.randomBytes(16).toString('hex');
     session.token = newRefreshToken;
     await this.sessionsRepository.save(session);
