@@ -11,6 +11,7 @@ import { Session } from './entities/session.entity';
 import { JwtPayload } from 'src/types/jwt-payload.interface';
 import { MoreThan, Repository } from 'typeorm';
 import { CleanupSessionDto } from './dto/cleanup-session.dto';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class SessionsService {
@@ -47,14 +48,44 @@ export class SessionsService {
 
     const session = await this.sessionsRepository.findOne({
       where: { token: refreshToken },
-      relations: ['user'],
+      relations: ['user', 'user.roles'],
+      select: {
+        id: true,
+        revoked: true,
+        expires: true,
+        token: true,
+        user: {
+          id: true,
+          isBlocked: true,
+          roles: {
+            name: true,
+          },
+        },
+      },
     });
+
     if (!session || session.expires < new Date() || session.revoked === true)
       throw new UnauthorizedException('Invalid refresh token');
+    // Genrate new refresh token and save it
+    const newRefreshToken = crypto.randomBytes(16).toString('hex');
+    session.token = newRefreshToken;
+    await this.sessionsRepository.save(session);
 
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      path: '/',
+      maxAge: Number(
+        this.configService.get('REFRESH_TOKEN_COOKIES_EXPIRATION_TIME'),
+      ),
+    });
+
+    const roles = session.user.roles || [];
     const payload = {
-      userId: session?.user.id,
-      sessionId: session?.id,
+      userId: session.user.id,
+      sessionId: session.id,
+      roles: roles.map((role) => role.name),
     } as JwtPayload;
 
     const newAccessToken = await this.jwtService.signAsync(payload, {
@@ -65,10 +96,11 @@ export class SessionsService {
     res.setHeader('Authorization', `Bearer ${newAccessToken}`);
 
     return {
-      message: 'Access token refreshed',
+      message: 'Access token and refresh token refreshed',
       success: true,
       data: {
-        token: newAccessToken,
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken,
       },
     };
   }

@@ -16,36 +16,46 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly sessionsRepository: Repository<Session>,
     private configService: ConfigService,
   ) {
-    const secret = configService.get<string>('JWT_SECRET')!;
-
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: secret,
+      secretOrKey: configService.get<string>('JWT_SECRET')!,
     });
   }
 
   async validate(payload: JwtPayload) {
-    const result = await this.usersRepository
-      .createQueryBuilder('user')
-      .leftJoinAndSelect('user.sessions', 'session')
-      .where('user.id = :userId', { userId: payload.userId })
-      .andWhere('session.id = :sessionId', { sessionId: payload.sessionId })
-      .getOne();
+    const session = await this.sessionsRepository.findOne({
+      where: { id: payload.sessionId },
+      relations: ['user', 'user.roles'],
+      select: {
+        id: true,
+        revoked: true,
+        expires: true,
+        user: {
+          id: true,
+          isBlocked: true,
+          roles: {
+            name: true,
+          },
+        },
+      },
+    });
 
-    if (!result || result.isBlocked) throw new UnauthorizedException();
-    const session = result.sessions?.find((s) => s.id === payload.sessionId);
-    if (
-      !session ||
-      session.revoked ||
-      (session.expires && session.expires < new Date())
-    )
-      throw new UnauthorizedException();
-    console.log(payload, result.roles);
+    if (!session) throw new UnauthorizedException('Session not found');
+    if (session.revoked) throw new UnauthorizedException('Session revoked');
+    if (session.expires && session.expires < new Date())
+      throw new UnauthorizedException('Session expired');
+
+    const user = session.user;
+    if (!user || user.isBlocked)
+      throw new UnauthorizedException('User blocked or not found');
+
+    const roles = session.user.roles || [];
+
     return {
       userId: payload.userId,
       sessionId: payload.sessionId,
-      roles: result.roles,
+      roles: roles.map((role) => role.name),
     };
   }
 }

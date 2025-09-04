@@ -11,8 +11,14 @@ import { UsersModule } from './users/users.module';
 import { MailModule } from './mail/mail.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { SharedModule } from './Shared/shard.module';
+import { UserSeederService } from './users/seeder/user.seeder.service';
+import { Session } from 'inspector/promises';
+import { Role } from './users/entities/roles.entity';
+import { User } from './users/entities/user.entity';
 @Module({
   imports: [
+    TypeOrmModule.forRoot(dataSourceOptions),
+    TypeOrmModule.forFeature([User, Role, Session]),
     SharedModule,
     ThrottlerModule.forRoot([
       {
@@ -34,7 +40,6 @@ import { SharedModule } from './Shared/shard.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    TypeOrmModule.forRoot(dataSourceOptions),
     AuthModule,
     UsersModule,
     MailModule,
@@ -47,6 +52,7 @@ import { SharedModule } from './Shared/shard.module';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
+    UserSeederService,
   ],
 })
 export class AppModule {}
