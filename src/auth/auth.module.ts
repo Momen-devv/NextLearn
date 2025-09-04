@@ -9,10 +9,11 @@ import { PassportModule } from '@nestjs/passport';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { forwardRef } from '@nestjs/common';
 import { SharedModule } from 'src/Shared/shard.module';
+import { Role } from 'src/users/entities/roles.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Session]),
+    TypeOrmModule.forFeature([User, Session, Role]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
     forwardRef(() => SharedModule),
     MailModule,

@@ -5,9 +5,11 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 import { Session } from '../../sessions/entities/session.entity';
-import { UserRole } from 'src/enums/user-role.enum';
+import { Role } from './roles.entity';
 
 @Entity({ name: 'users' })
 export class User {
@@ -41,15 +43,16 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   passwordResetCodeExpiresAt: Date | null;
 
-  @Column({
-    type: 'enum',
-    enum: UserRole,
-    default: UserRole.USER,
-  })
-  roles: UserRole[];
-
   @Column({ default: false })
   isBlocked: boolean;
+
+  @ManyToMany(() => Role)
+  @JoinTable({
+    name: 'user_roles',
+    joinColumn: { name: 'userId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'roleId', referencedColumnName: 'id' },
+  })
+  roles: Role[];
 
   @OneToMany(() => Session, (session) => session.user)
   sessions: Session[];
