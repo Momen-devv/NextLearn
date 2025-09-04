@@ -59,11 +59,4 @@ export class SessionsController {
   revokeAllSessions(@Req() req: Request) {
     return this.sessionsService.revokeAllSessions(req);
   }
-
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @Delete('cleanup-sessions')
-  cleanupSessions(@Body() dto: CleanupSessionDto) {
-    return this.sessionsService.cleanupSessions(dto);
-  }
 }

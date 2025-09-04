@@ -312,6 +312,7 @@ export class AuthService {
       ),
       device: deviceInfo,
     });
+    console.log(newSession);
     return await this.sessionsRepository.save(newSession);
   }
 

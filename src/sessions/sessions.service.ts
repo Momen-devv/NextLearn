@@ -167,23 +167,4 @@ export class SessionsService {
       message: 'All sessions revoked except current',
     };
   }
-
-  async cleanupSessions(dto: CleanupSessionDto) {
-    if (!dto.confirm) {
-      throw new BadRequestException('Confirmation required');
-    }
-    const NOW = new Date(Date.now());
-
-    const sessions = await this.sessionsRepository
-      .createQueryBuilder()
-      .delete()
-      .where('revoked = true OR expires < :NOW', { NOW })
-      .execute();
-
-    return {
-      success: true,
-      message: 'Sessions cleaned up',
-      deletedCount: sessions.affected,
-    };
-  }
 }
