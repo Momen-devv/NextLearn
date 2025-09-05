@@ -11,7 +11,7 @@ export class SessionsCronService {
     private sessionsRepository: Repository<Session>,
   ) {}
 
-  private readonly retentionDays = 7;
+  private retentionDays: number = 7;
 
   @Cron(CronExpression.EVERY_WEEK, {
     name: 'cleanupSessions',
@@ -40,5 +40,14 @@ export class SessionsCronService {
     } else {
       console.log(`No sessions to clean at ${now}`);
     }
+  }
+
+  // Make retention dynamic
+  updateRetentionDays(newDays: number) {
+    this.retentionDays = newDays;
+    return {
+      success: true,
+      message: `Retention period updated to ${newDays} days`,
+    };
   }
 }

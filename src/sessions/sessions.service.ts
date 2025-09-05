@@ -10,7 +10,6 @@ import type { Request, Response } from 'express';
 import { Session } from './entities/session.entity';
 import { JwtPayload } from 'src/types/jwt-payload.interface';
 import { MoreThan, Repository } from 'typeorm';
-import { CleanupSessionDto } from './dto/cleanup-session.dto';
 import * as crypto from 'crypto';
 
 @Injectable()
