@@ -1,73 +1,75 @@
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Request } from 'express';
-import { Session } from 'src/sessions/entities/session.entity';
-import { User } from 'src/users/entities/user.entity';
-import { Repository } from 'typeorm';
-import { JwtPayload } from 'src/types/jwt-payload.interface';
+// Use passport with jwt strategy
 
-@Injectable()
-export class AuthGuard implements CanActivate {
-  constructor(
-    private jwtService: JwtService,
-    @InjectRepository(User) private readonly usersRepository: Repository<User>,
-    @InjectRepository(Session)
-    private readonly sessionssRepository: Repository<Session>,
-  ) {}
+// import {
+//   CanActivate,
+//   ExecutionContext,
+//   Injectable,
+//   UnauthorizedException,
+// } from '@nestjs/common';
+// import { JwtService } from '@nestjs/jwt';
+// import { InjectRepository } from '@nestjs/typeorm';
+// import { Request } from 'express';
+// import { Session } from 'src/sessions/entities/session.entity';
+// import { User } from 'src/users/entities/user.entity';
+// import { Repository } from 'typeorm';
+// import { JwtPayload } from 'src/types/jwt-payload.interface';
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
-    const token = this.extractTokenFromHeader(request);
-    if (!token) {
-      throw new UnauthorizedException('No token provided');
-    }
+// @Injectable()
+// export class AuthGuard implements CanActivate {
+//   constructor(
+//     private jwtService: JwtService,
+//     @InjectRepository(User) private readonly usersRepository: Repository<User>,
+//     @InjectRepository(Session)
+//     private readonly sessionssRepository: Repository<Session>,
+//   ) {}
 
-    try {
-      const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
-        secret: process.env.JWT_SECRET,
-      });
+//   async canActivate(context: ExecutionContext): Promise<boolean> {
+//     const request = context.switchToHttp().getRequest<Request>();
+//     const token = this.extractTokenFromHeader(request);
+//     if (!token) {
+//       throw new UnauthorizedException('No token provided');
+//     }
 
-      const user = await this.usersRepository.findOne({
-        where: { id: payload.userId },
-      });
+//     try {
+//       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
+//         secret: process.env.JWT_SECRET,
+//       });
 
-      if (!user) throw new UnauthorizedException('User not found');
-      if (user.isBlocked === true)
-        throw new UnauthorizedException('Account is blocked');
+//       const user = await this.usersRepository.findOne({
+//         where: { id: payload.userId },
+//       });
 
-      const session = await this.sessionssRepository.findOne({
-        where: { id: payload.sessionId },
-      });
+//       if (!user) throw new UnauthorizedException('User not found');
+//       if (user.isBlocked === true)
+//         throw new UnauthorizedException('Account is blocked');
 
-      if (!session) throw new UnauthorizedException('Session not found');
-      if (session.revoked === true)
-        throw new UnauthorizedException('Session revoked, please log in');
-      if (session.expires && session.expires < new Date())
-        throw new UnauthorizedException('Session has expired');
+//       const session = await this.sessionssRepository.findOne({
+//         where: { id: payload.sessionId },
+//       });
 
-      request['user'] = payload;
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === 'JsonWebTokenError') {
-          throw new UnauthorizedException('Invalid token');
-        }
-        if (error.name === 'TokenExpiredError') {
-          throw new UnauthorizedException('Token has expired');
-        }
-      }
-      throw new UnauthorizedException('Authentication failed');
-    }
-    return true;
-  }
+//       if (!session) throw new UnauthorizedException('Session not found');
+//       if (session.revoked === true)
+//         throw new UnauthorizedException('Session revoked, please log in');
+//       if (session.expires && session.expires < new Date())
+//         throw new UnauthorizedException('Session has expired');
 
-  private extractTokenFromHeader(request: Request): string | undefined {
-    const [type, token] = request.headers.authorization?.split(' ') ?? [];
-    return type === 'Bearer' ? token : undefined;
-  }
-}
+//       request['user'] = payload;
+//     } catch (error) {
+//       if (error instanceof Error) {
+//         if (error.name === 'JsonWebTokenError') {
+//           throw new UnauthorizedException('Invalid token');
+//         }
+//         if (error.name === 'TokenExpiredError') {
+//           throw new UnauthorizedException('Token has expired');
+//         }
+//       }
+//       throw new UnauthorizedException('Authentication failed');
+//     }
+//     return true;
+//   }
+
+//   private extractTokenFromHeader(request: Request): string | undefined {
+//     const [type, token] = request.headers.authorization?.split(' ') ?? [];
+//     return type === 'Bearer' ? token : undefined;
+//   }
+// }

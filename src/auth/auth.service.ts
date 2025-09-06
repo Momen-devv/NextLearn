@@ -5,7 +5,8 @@ import {
 } from '@nestjs/common';
 import { RegisterDto } from './dto/register.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { User, UserRole } from 'src/users/entities/user.entity';
+import { User } from 'src/users/entities/user.entity';
+import { UserRole } from 'src/enums/user-role.enum';
 import { Session } from 'src/sessions/entities/session.entity';
 import { Repository } from 'typeorm';
 import { hash, compare } from 'bcrypt';
@@ -21,6 +22,8 @@ import { ResetPassword } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { JwtPayload } from 'src/types/jwt-payload.interface';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
+import { Role } from 'src/users/entities/roles.entity';
 
 @Injectable()
 export class AuthService {
@@ -28,6 +31,8 @@ export class AuthService {
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
     @InjectRepository(Session)
     private readonly sessionsRepository: Repository<Session>,
+    @InjectRepository(Role)
+    private readonly rolesRepository: Repository<Role>,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
@@ -84,11 +89,21 @@ export class AuthService {
       throw new BadRequestException('Token has expired');
     }
 
-    await this.updateUser(user.id, {
-      isEmailVerified: true,
-      verificationCode: null,
-      verificationCodeExpiresAt: null,
+    user.isEmailVerified = true;
+    user.verificationCode = null;
+    user.verificationCodeExpiresAt = null;
+
+    const userRole = await this.rolesRepository.findOneBy({
+      name: UserRole.USER,
     });
+    if (userRole) {
+      user.roles = user.roles || [];
+      if (!user.roles.some((r) => r.name === UserRole.USER)) {
+        user.roles.push(userRole);
+      }
+    }
+
+    await this.usersRepository.save(user);
 
     return {
       message: 'Your account verified successfully, please log in',
@@ -139,17 +154,22 @@ export class AuthService {
     const isPasswordValid = await compare(dto.password, user.password);
     if (!isPasswordValid)
       throw new UnauthorizedException('Invalid email or password');
-
-    const refreshToken = await this.createRefreshToken(user.id, user.role);
+    // const refreshToken = await this.createRefreshToken(user.id, user.roles);
+    const refreshToken = crypto.randomBytes(16).toString('hex');
     const deviceInfo = this.getDeviceInfo(req);
     const newSession = await this.createSession(refreshToken, user, deviceInfo);
-    const accessToken = await this.createAccessToken(user.id, newSession.id);
+
+    const accessToken = await this.createAccessToken(
+      user.id,
+      newSession.id,
+      user.roles.map((role) => role.name),
+    );
 
     this.setTokens(res, accessToken, refreshToken);
     return {
       message: 'Login successful',
       status: 200,
-      data: { token: accessToken },
+      data: { accessToken: accessToken, refreshToken: refreshToken },
     };
   }
 
@@ -187,6 +207,7 @@ export class AuthService {
     }
 
     const newPassword = await this.hashPassword(dto.password);
+
     await this.updateUser(user.id, {
       password: newPassword,
       passwordResetCode: null,
@@ -213,17 +234,23 @@ export class AuthService {
       { revoked: true, expires: new Date(Date.now()) },
     );
 
-    const refreshToken = await this.createRefreshToken(user.id, user.role);
+    // const refreshToken = await this.createRefreshToken(user.id, user.roles);
+    const refreshToken = crypto.randomBytes(16).toString('hex');
     const deviceInfo = this.getDeviceInfo(req);
     const newSession = await this.createSession(refreshToken, user, deviceInfo);
-    const accessToken = await this.createAccessToken(user.id, newSession.id);
+    const accessToken = await this.createAccessToken(
+      user.id,
+      newSession.id,
+      // user.roles,
+      user.roles.map((role) => role.name),
+    );
 
     this.setTokens(res, accessToken, refreshToken);
 
     return {
       message: 'Password changed successfully',
       status: 200,
-      data: { token: accessToken },
+      data: { accessToken: accessToken, refreshToken: refreshToken },
     };
   }
 
@@ -234,6 +261,7 @@ export class AuthService {
       httpOnly: true,
       secure: true,
       sameSite: 'strict',
+      path: '/',
       maxAge: Number(
         this.configService.get('REFRESH_TOKEN_COOKIES_EXPIRATION_TIME'),
       ),
@@ -244,21 +272,19 @@ export class AuthService {
   private async ensureUserExists(field: string, value: string) {
     const user = await this.usersRepository.findOne({
       where: { [field]: value },
+      relations: ['roles'],
     });
     if (!user)
       throw new BadRequestException(`No user found with ${field}: ${value}`);
     return user;
   }
 
-  private async createRefreshToken(userId: string, role: UserRole) {
-    const payload = { userId, role };
-    return await this.jwtService.signAsync(payload, {
-      expiresIn: this.configService.get('REFRESH_TOKEN_EXPIRATION') as string,
-    });
-  }
-
-  private async createAccessToken(userId: string, sessionId: string) {
-    const payload = { userId, sessionId };
+  private async createAccessToken(
+    userId: string,
+    sessionId: string,
+    roles: UserRole[],
+  ) {
+    const payload = { userId, sessionId, roles };
     return await this.jwtService.signAsync(payload, {
       expiresIn: this.configService.get(
         'ACCESS_TOKEN_EXPIRATION_TIME',
@@ -286,6 +312,7 @@ export class AuthService {
       ),
       device: deviceInfo,
     });
+    console.log(newSession);
     return await this.sessionsRepository.save(newSession);
   }
 

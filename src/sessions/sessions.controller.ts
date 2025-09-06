@@ -1,14 +1,79 @@
-import { Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { SessionsService } from './sessions.service';
+import { AuthGuard } from '@nestjs/passport';
+import { Roles } from 'src/decorators/roles.decorator';
+import { UserRole } from 'src/enums/user-role.enum';
+import { UpdateRetentionDto } from './dto/update-retention.dto';
+import { SessionsCronService } from './sessions.cron.service';
+import { RolesGuard } from 'src/guards/roles.guard';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('sessions')
 export class SessionsController {
-  constructor(private sessionsService: SessionsService) {}
+  constructor(
+    private sessionsService: SessionsService,
+    private sessionsCronService: SessionsCronService,
+  ) {}
 
+  @Throttle({ public: {} })
+  @UseGuards(AuthGuard('jwt'))
+  @Get()
+  @HttpCode(200)
+  sessions(@Req() req: Request) {
+    return this.sessionsService.sessions(req);
+  }
+
+  @Throttle({ public: {} })
   @Post('refresh')
   @HttpCode(200)
   refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     return this.sessionsService.refresh(req, res);
+  }
+
+  @Throttle({ public: {} })
+  @UseGuards(AuthGuard('jwt'))
+  @Post('logout')
+  @HttpCode(200)
+  logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.sessionsService.logout(req, res);
+  }
+
+  @Throttle({ public: {} })
+  @UseGuards(AuthGuard('jwt'))
+  @Post('revoke-session/:sessionId')
+  @HttpCode(200)
+  revokeSession(
+    @Param('sessionId', new ParseUUIDPipe()) sessionId: string,
+    @Req() req: Request,
+  ) {
+    return this.sessionsService.revokeSession(sessionId, req);
+  }
+
+  @Throttle({ public: {} })
+  @UseGuards(AuthGuard('jwt'))
+  @Post('revoke-all-sessions')
+  @HttpCode(200)
+  revokeAllSessions(@Req() req: Request) {
+    return this.sessionsService.revokeAllSessions(req);
+  }
+
+  @Throttle({ internal: {} })
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Post('update-retention')
+  updateRetention(@Body() dto: UpdateRetentionDto) {
+    return this.sessionsCronService.updateRetentionDays(dto.days);
   }
 }
