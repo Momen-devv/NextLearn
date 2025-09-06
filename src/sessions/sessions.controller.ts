@@ -18,6 +18,7 @@ import { UserRole } from 'src/enums/user-role.enum';
 import { UpdateRetentionDto } from './dto/update-retention.dto';
 import { SessionsCronService } from './sessions.cron.service';
 import { RolesGuard } from 'src/guards/roles.guard';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('sessions')
 export class SessionsController {
@@ -26,6 +27,7 @@ export class SessionsController {
     private sessionsCronService: SessionsCronService,
   ) {}
 
+  @Throttle({ public: {} })
   @UseGuards(AuthGuard('jwt'))
   @Get()
   @HttpCode(200)
@@ -33,12 +35,14 @@ export class SessionsController {
     return this.sessionsService.sessions(req);
   }
 
+  @Throttle({ public: {} })
   @Post('refresh')
   @HttpCode(200)
   refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     return this.sessionsService.refresh(req, res);
   }
 
+  @Throttle({ public: {} })
   @UseGuards(AuthGuard('jwt'))
   @Post('logout')
   @HttpCode(200)
@@ -46,6 +50,7 @@ export class SessionsController {
     return this.sessionsService.logout(req, res);
   }
 
+  @Throttle({ public: {} })
   @UseGuards(AuthGuard('jwt'))
   @Post('revoke-session/:sessionId')
   @HttpCode(200)
@@ -56,6 +61,7 @@ export class SessionsController {
     return this.sessionsService.revokeSession(sessionId, req);
   }
 
+  @Throttle({ public: {} })
   @UseGuards(AuthGuard('jwt'))
   @Post('revoke-all-sessions')
   @HttpCode(200)
@@ -63,6 +69,7 @@ export class SessionsController {
     return this.sessionsService.revokeAllSessions(req);
   }
 
+  @Throttle({ internal: {} })
   @UseGuards(AuthGuard('jwt'), RolesGuard)
   @Roles(UserRole.ADMIN)
   @Post('update-retention')
