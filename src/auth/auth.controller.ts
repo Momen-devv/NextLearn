@@ -20,6 +20,7 @@ import { ResetPassword } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
@@ -32,13 +33,10 @@ export class AuthController {
   }
 
   @Throttle({ sensitive: {} })
-  @Get('verify-email/:verificationCode')
+  @Get('verify-email')
   @HttpCode(200)
-  verifyEmail(
-    @Param('verificationCode', new ParseUUIDPipe())
-    verificationCode: string,
-  ) {
-    return this.authService.verifyEmail(verificationCode);
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto);
   }
 
   @Throttle({ sensitive: {} })
@@ -67,13 +65,10 @@ export class AuthController {
   }
 
   @Throttle({ sensitive: {} })
-  @Post('reset-password/:token')
+  @Post('reset-password')
   @HttpCode(200)
-  resetPassword(
-    @Body() dto: ResetPassword,
-    @Param('token', new ParseUUIDPipe()) token,
-  ) {
-    return this.authService.resetPassword(dto, token);
+  resetPassword(@Body() dto: ResetPassword) {
+    return this.authService.resetPassword(dto);
   }
 
   @UseGuards(AuthGuard('jwt'))
