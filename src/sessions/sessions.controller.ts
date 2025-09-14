@@ -13,19 +13,11 @@ import {
 import type { Request, Response } from 'express';
 import { SessionsService } from './sessions.service';
 import { AuthGuard } from '@nestjs/passport';
-import { Roles } from 'src/decorators/roles.decorator';
-import { UserRole } from 'src/enums/user-role.enum';
-import { UpdateRetentionDto } from './dto/update-retention.dto';
-import { SessionsCronService } from './sessions.cron.service';
-import { RolesGuard } from 'src/guards/roles.guard';
 import { Throttle } from '@nestjs/throttler';
 
 @Controller('sessions')
 export class SessionsController {
-  constructor(
-    private sessionsService: SessionsService,
-    private sessionsCronService: SessionsCronService,
-  ) {}
+  constructor(private sessionsService: SessionsService) {}
 
   @Throttle({ public: {} })
   @UseGuards(AuthGuard('jwt'))
@@ -67,13 +59,5 @@ export class SessionsController {
   @HttpCode(200)
   revokeAllSessions(@Req() req: Request) {
     return this.sessionsService.revokeAllSessions(req);
-  }
-
-  @Throttle({ internal: {} })
-  @UseGuards(AuthGuard('jwt'), RolesGuard)
-  @Roles(UserRole.ADMIN)
-  @Post('update-retention')
-  updateRetention(@Body() dto: UpdateRetentionDto) {
-    return this.sessionsCronService.updateRetentionDays(dto.days);
   }
 }

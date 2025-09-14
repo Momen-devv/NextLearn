@@ -1,18 +1,18 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { RegisterDto } from './dto/register.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from 'src/users/entities/user.entity';
 import { UserRole } from 'src/enums/user-role.enum';
-import { Session } from 'src/sessions/entities/session.entity';
 import { Repository } from 'typeorm';
 import { hash, compare } from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { MailService } from 'src/mail/mail.service';
-import { v4 as uuidv4 } from 'uuid';
 import { ResendVerification } from './dto/resend-verification.dto';
 import { LoginDto } from './dto/login.dto';
 import type { Request, Response } from 'express';
@@ -24,15 +24,16 @@ import { JwtPayload } from 'src/types/jwt-payload.interface';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { Role } from 'src/users/entities/roles.entity';
+import Redis from 'ioredis';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
-    @InjectRepository(Session)
-    private readonly sessionsRepository: Repository<Session>,
     @InjectRepository(Role)
     private readonly rolesRepository: Repository<Role>,
+    @Inject('REDIS_CLIENT') private redisClient: Redis,
     private readonly jwtService: JwtService,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
@@ -47,19 +48,13 @@ export class AuthService {
 
     const hashedPassword = await this.hashPassword(dto.password);
     const verificationCode = this.generateVerificationCode();
-    const verificationCodeExpiresAt = new Date(
-      Date.now() +
-        Number(
-          this.configService.get<number>('VERIFICATION_CODE_EXPIRATION_TIME'),
-        ),
-    );
 
     const user = await this.createUser({
       ...dto,
       password: hashedPassword,
-      verificationCode,
-      verificationCodeExpiresAt,
     });
+
+    await this.redisClient.setex(`otp:email:${user.id}`, 300, verificationCode); // 5 min
 
     await this.mailService.sendVerificationEmail(
       user.email,
@@ -74,28 +69,26 @@ export class AuthService {
   }
 
   // Verifies email using the provided code and updates user status
-  async verifyEmail(verificationCode: string) {
-    const user = await this.ensureUserExists(
-      'verificationCode',
-      verificationCode,
-    );
+  async verifyEmail(dto: VerifyEmailDto) {
+    const user = await this.ensureUserExists('email', dto.email);
 
-    if (verificationCode !== user.verificationCode)
-      throw new BadRequestException('Invalid token');
-    if (
-      user.verificationCodeExpiresAt &&
-      user.verificationCodeExpiresAt < new Date()
-    ) {
-      throw new BadRequestException('Token has expired');
+    if (user.isEmailVerified)
+      throw new BadRequestException('User account already verified');
+
+    const storedOtp = await this.redisClient.get(`otp:email:${user.id}`);
+    if (!storedOtp || storedOtp !== dto.verificationCode) {
+      throw new UnauthorizedException('Invalid or expired verification code');
     }
 
+    // Cleanup OTP
+    await this.redisClient.del(`otp:email:${user.id}`);
+
     user.isEmailVerified = true;
-    user.verificationCode = null;
-    user.verificationCodeExpiresAt = null;
 
     const userRole = await this.rolesRepository.findOneBy({
       name: UserRole.USER,
     });
+
     if (userRole) {
       user.roles = user.roles || [];
       if (!user.roles.some((r) => r.name === UserRole.USER)) {
@@ -116,25 +109,10 @@ export class AuthService {
 
     if (user.isEmailVerified)
       throw new BadRequestException('User account already verified');
-    if (
-      user.verificationCodeExpiresAt &&
-      user.verificationCodeExpiresAt > new Date()
-    ) {
-      throw new BadRequestException(
-        'A verification email has already been sent and is still valid. Please check your inbox.',
-      );
-    }
 
     const verificationCode = this.generateVerificationCode();
-    const verificationCodeExpiresAt = new Date(
-      Date.now() +
-        Number(this.configService.get('VERIFICATION_CODE_EXPIRATION_TIME')),
-    );
 
-    await this.usersRepository.update(
-      { id: user.id },
-      { verificationCode, verificationCodeExpiresAt },
-    );
+    await this.redisClient.setex(`otp:email:${user.id}`, 300, verificationCode); // 5 min
 
     await this.mailService.sendResendVerificationEmail(
       user.email,
@@ -151,25 +129,50 @@ export class AuthService {
 
     if (!user.isEmailVerified)
       throw new UnauthorizedException('Email not verified');
+
+    if (user.isBlocked) throw new UnauthorizedException('User is blocked');
+
     const isPasswordValid = await compare(dto.password, user.password);
     if (!isPasswordValid)
       throw new UnauthorizedException('Invalid email or password');
-    // const refreshToken = await this.createRefreshToken(user.id, user.roles);
+
     const refreshToken = crypto.randomBytes(16).toString('hex');
+
     const deviceInfo = this.getDeviceInfo(req);
-    const newSession = await this.createSession(refreshToken, user, deviceInfo);
+
+    const sessionId = crypto.randomUUID();
 
     const accessToken = await this.createAccessToken(
       user.id,
-      newSession.id,
+      sessionId,
       user.roles.map((role) => role.name),
     );
+    const sessionKey = `session:${user.id}:${sessionId}`;
+
+    await this.redisClient.hset(
+      sessionKey,
+      'refreshToken',
+      refreshToken,
+      'deviceInfo',
+      deviceInfo,
+      'refreshExpiresAt',
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      'revoked',
+      'false',
+      'createdAt',
+      new Date().toISOString(),
+    );
+    await this.redisClient.expire(sessionKey, 2592000); // 30 days
 
     this.setTokens(res, accessToken, refreshToken);
+
     return {
       message: 'Login successful',
       status: 200,
-      data: { accessToken: accessToken, refreshToken: refreshToken },
+      data: {
+        accessToken: accessToken,
+        refreshToken: refreshToken,
+      },
     };
   }
 
@@ -177,15 +180,8 @@ export class AuthService {
     const user = await this.ensureUserExists('email', dto.email);
 
     const resetCode = this.generateVerificationCode();
-    const resetCodeExpiresAt = new Date(
-      Date.now() +
-        Number(this.configService.get('VERIFICATION_CODE_EXPIRATION_TIME')),
-    );
 
-    await this.usersRepository.update(user.id, {
-      passwordResetCode: resetCode,
-      passwordResetCodeExpiresAt: resetCodeExpiresAt,
-    });
+    await this.redisClient.setex(`reset:email:${user.id}`, 900, resetCode);
 
     await this.mailService.sendResetPassword(
       user.email,
@@ -196,23 +192,25 @@ export class AuthService {
     return { message: 'Reset link sent to your email', status: 200 };
   }
 
-  async resetPassword(dto: ResetPassword, token: string) {
-    const user = await this.ensureUserExists('passwordResetCode', token);
+  async resetPassword(dto: ResetPassword) {
+    const user = await this.ensureUserExists('email', dto.email);
+    if (!user) throw new NotFoundException('User not found');
 
-    if (
-      user.passwordResetCodeExpiresAt &&
-      user.passwordResetCodeExpiresAt < new Date()
-    ) {
-      throw new BadRequestException('Token invalid or expired');
+    const storedResetCode = await this.redisClient.get(
+      `reset:email:${user.id}`,
+    );
+    if (!storedResetCode || storedResetCode !== dto.resetCode) {
+      throw new BadRequestException('Invalid or expired reset code');
     }
 
     const newPassword = await this.hashPassword(dto.password);
 
     await this.updateUser(user.id, {
       password: newPassword,
-      passwordResetCode: null,
-      passwordResetCodeExpiresAt: null,
     });
+
+    // Cleanup Redis
+    await this.redisClient.del(`reset:email:${user.id}`);
 
     return { message: 'Password reset successful', status: 200 };
   }
@@ -220,7 +218,7 @@ export class AuthService {
   // Changes password, revokes old sessions, and creates new ones
   async changePassword(dto: ChangePasswordDto, req: Request, res: Response) {
     const payload = req['user'] as JwtPayload;
-    const user = await this.ensureUserExists('id', payload.userId);
+    const user = await this.ensureUserExists('id', payload.sub);
 
     const isOldPasswordCorrect = await compare(dto.oldPassword, user.password);
     if (!isOldPasswordCorrect)
@@ -229,20 +227,40 @@ export class AuthService {
     const newHashedPassword = await this.hashPassword(dto.newPassword);
     await this.usersRepository.update(user.id, { password: newHashedPassword });
 
-    await this.sessionsRepository.update(
-      { user: { id: payload.userId } },
-      { revoked: true, expires: new Date(Date.now()) },
+    // Revoke all sessions in Redis
+    const allSessionKeys = await this.redisClient.keys(`session:${user.id}:*`);
+    await Promise.all(
+      allSessionKeys.map((key) =>
+        this.redisClient.hset(key, 'revoked', 'true'),
+      ),
     );
 
-    // const refreshToken = await this.createRefreshToken(user.id, user.roles);
+    // Create new session
     const refreshToken = crypto.randomBytes(16).toString('hex');
     const deviceInfo = this.getDeviceInfo(req);
-    const newSession = await this.createSession(refreshToken, user, deviceInfo);
+    const sessionId = crypto.randomUUID();
+    await this.redisClient.hset(`session:${user.id}:${sessionId}`, [
+      'refreshToken',
+      refreshToken,
+      'deviceInfo',
+      deviceInfo,
+      'refreshExpiresAt',
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      'revoked',
+      'false',
+      'createdAt',
+      new Date().toISOString(),
+    ]);
+
+    await this.redisClient.expire(
+      `session:${user.id}:${sessionId}`,
+      30 * 24 * 60 * 60,
+    ); // 30 days
+
     const accessToken = await this.createAccessToken(
       user.id,
-      newSession.id,
-      // user.roles,
-      user.roles.map((role) => role.name),
+      sessionId,
+      payload.roles,
     );
 
     this.setTokens(res, accessToken, refreshToken);
@@ -259,7 +277,7 @@ export class AuthService {
     res.setHeader('Authorization', `Bearer ${accessToken}`);
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       path: '/',
       maxAge: Number(
@@ -284,7 +302,7 @@ export class AuthService {
     sessionId: string,
     roles: UserRole[],
   ) {
-    const payload = { userId, sessionId, roles };
+    const payload = { sub: userId, sid: sessionId, roles };
     return await this.jwtService.signAsync(payload, {
       expiresIn: this.configService.get(
         'ACCESS_TOKEN_EXPIRATION_TIME',
@@ -296,24 +314,6 @@ export class AuthService {
   private getDeviceInfo(req: Request) {
     const ua = useragent.parse(req.headers['user-agent']);
     return `${ua.os?.toString() || 'Unknown OS'} - ${ua.device?.toString() || 'Unknown Device'} - ${req.ip}`;
-  }
-
-  private async createSession(
-    refreshToken: string,
-    user: User,
-    deviceInfo: string,
-  ) {
-    const newSession = this.sessionsRepository.create({
-      token: refreshToken,
-      user,
-      expires: new Date(
-        Date.now() +
-          Number(this.configService.get('REFRESH_TOKEN_EXPIRATION_TIME')),
-      ),
-      device: deviceInfo,
-    });
-    console.log(newSession);
-    return await this.sessionsRepository.save(newSession);
   }
 
   private async updateUser(userId: string, data: Partial<User>) {
@@ -330,6 +330,6 @@ export class AuthService {
   }
 
   private generateVerificationCode(): string {
-    return uuidv4();
+    return crypto.randomInt(100000, 999999).toString();
   }
 }

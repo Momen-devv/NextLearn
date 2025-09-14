@@ -86,11 +86,9 @@ html
         .header
           h1 Hey #{firstName}, Let's Get You Verified!
         .content
-          p Your previous verification link has expired. Don't worry, click the button below to receive a new one and complete your verification (valid for 10 minutes).
-          a.button(href=verificationUrl) Resend Verification
-          p If the button doesn't work, copy and paste this link:
-          p
-            a.link(href=verificationUrl)= verificationUrl
+          p Your previous verification code has expired. Don't worry, receive a new one and complete your verification (valid for 5 minutes).
+            .otp #{verificationCode}
+            
         .footer
           p &copy; #{new Date().getFullYear()} NextLearn. All rights reserved.
           p Didn't request this? Please ignore this email.

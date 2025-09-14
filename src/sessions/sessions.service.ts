@@ -1,121 +1,214 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
 import type { Request, Response } from 'express';
-import { Session } from './entities/session.entity';
 import { JwtPayload } from 'src/types/jwt-payload.interface';
-import { MoreThan, Repository } from 'typeorm';
 import * as crypto from 'crypto';
+import Redis from 'ioredis';
+import useragent from 'useragent';
 
 @Injectable()
 export class SessionsService {
   constructor(
-    @InjectRepository(Session)
-    private readonly sessionsRepository: Repository<Session>,
+    @Inject('REDIS_CLIENT') private redisClient: Redis,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {}
 
   async sessions(req: Request) {
     const payload = req['user'] as JwtPayload;
+    const userId = payload.sub;
+    const currentSessionId = payload.sid; // Assuming sid is in the payload
 
-    const sessions = await this.sessionsRepository.find({
-      where: {
-        user: { id: payload.userId },
-        revoked: false,
-        expires: MoreThan(new Date()),
-      },
-      select: ['id', 'device', 'createdAt', 'expires'],
+    const sessionKeys = await this.redisClient.keys(`session:${userId}:*`);
+
+    // Use pipeline to fetch all data at once
+    const pipeline = this.redisClient.pipeline();
+    sessionKeys.forEach((key) =>
+      pipeline.hmget(key, 'deviceInfo', 'revoked', 'createdAt'),
+    );
+    const results = (await pipeline.exec()) as [[Error, string[]]] | null;
+
+    const activeSessions: {
+      sessionId: string;
+      deviceInfo: string;
+      createdAt: string;
+      isCurrent: boolean;
+    }[] = [];
+
+    if (!results) {
+      throw new Error(
+        'Failed to fetch session data: Pipeline execution failed',
+      );
+    }
+
+    results.forEach(([err, [deviceInfo, revoked, createdAt]], index) => {
+      if (err) {
+        console.error(`Error fetching session ${sessionKeys[index]}:`, err);
+        return; // Skip this session on error
+      }
+      const sessionId = sessionKeys[index].split(':')[2];
+      const isRevoked = revoked === 'true';
+
+      if (!isRevoked) {
+        const isCurrent = sessionId === currentSessionId;
+        activeSessions.push({ sessionId, deviceInfo, isCurrent, createdAt });
+      }
     });
+
+    // Sort to put current session first
+    activeSessions.sort((a, b) =>
+      b.isCurrent === a.isCurrent ? 0 : b.isCurrent ? 1 : -1,
+    );
 
     return {
       message: 'Get active sessions successfully',
       success: true,
-      data: { sessions },
+      data: { sessions: activeSessions },
     };
   }
 
   async refresh(req: Request, res: Response) {
-    const refreshToken = req.cookies['refreshToken'] as string;
+    const refreshToken = req.cookies.refreshToken as string;
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token missing, please login');
+    }
 
-    if (!refreshToken) throw new UnauthorizedException('No refresh token');
+    const accessToken = req.headers.authorization?.split(' ')[1];
 
-    const session = await this.sessionsRepository.findOne({
-      where: { token: refreshToken },
-      relations: ['user', 'user.roles'],
-      select: {
-        id: true,
-        revoked: true,
-        expires: true,
-        token: true,
-        user: {
-          id: true,
-          isBlocked: true,
-          roles: {
-            name: true,
-          },
-        },
-      },
-    });
+    if (!accessToken) {
+      throw new UnauthorizedException('Access token missing');
+    }
 
-    if (!session || session.expires < new Date() || session.revoked === true)
+    const decoded: JwtPayload = this.jwtService.decode(accessToken);
+    if (!decoded || !decoded.sub || !decoded.sid) {
+      throw new UnauthorizedException('Invalid token');
+    }
+
+    const userId = decoded.sub;
+    const sessionId = decoded.sid;
+    const sessionKey = `session:${userId}:${sessionId}`;
+
+    const ua = useragent.parse(req.headers['user-agent']);
+    const info = `${ua.os?.toString() || 'Unknown OS'} - ${ua.device?.toString() || 'Unknown Device'} - ${req.ip}`;
+
+    const [storedRefreshToken, revoked, refreshExpiresAt, deviceInfo] =
+      await this.redisClient.hmget(
+        sessionKey,
+        'refreshToken',
+        'revoked',
+        'refreshExpiresAt',
+        'deviceInfo',
+      );
+
+    // Check device info match (os and device only, ignore IP for flexibility)
+    const [storedOs, storedDevice, storedIp] = deviceInfo?.split(' - ') || [];
+    const [currentOs, currentDevice, currentIp] = info.split(' - ');
+
+    if (storedOs !== currentOs || storedDevice !== currentDevice) {
+      const allSessionKeys = await this.redisClient.keys(`session:${userId}:*`);
+      await Promise.all(
+        allSessionKeys.map((key) =>
+          this.redisClient.hset(key, 'revoked', 'true'),
+        ),
+      );
+
+      res.clearCookie('refreshToken', {
+        maxAge: 0,
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: true,
+        path: '/',
+      });
+
+      throw new UnauthorizedException(
+        'Device info not match, all sessions revoked',
+      );
+    }
+
+    // Check Blacklist (Reuse Detection) first
+    const isBlacklisted = await this.redisClient.sismember(
+      'blacklist',
+      refreshToken,
+    );
+    if (isBlacklisted) {
+      const allSessionKeys = await this.redisClient.keys(`session:${userId}:*`);
+      await Promise.all(
+        allSessionKeys.map(
+          (key) => this.redisClient.hset(key, 'revoked', 'true'), // Revoke all sessions
+        ),
+      );
+
+      res.clearCookie('refreshToken', {
+        maxAge: 0,
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: true,
+        path: '/',
+      });
+      throw new UnauthorizedException('Token reused, all sessions revoked');
+    }
+
+    // Validate refreshToken match
+    if (!storedRefreshToken || storedRefreshToken !== refreshToken) {
       throw new UnauthorizedException('Invalid refresh token');
-    // Genrate new refresh every refresh token and save it
-    const newRefreshToken = crypto.randomBytes(16).toString('hex');
-    session.token = newRefreshToken;
-    await this.sessionsRepository.save(session);
+    }
 
+    // Check revoked and refreshExpiresAt
+    if (
+      revoked === 'true' ||
+      (refreshExpiresAt && new Date(refreshExpiresAt) < new Date())
+    ) {
+      throw new UnauthorizedException(
+        'Session revoked or refresh token expired',
+      );
+    }
+
+    // Generate new tokens
+    const newAccessToken = await this.jwtService.signAsync({
+      sub: userId,
+      sid: sessionId,
+      roles: decoded.roles,
+    });
+    const newRefreshToken = crypto.randomBytes(16).toString('hex');
+
+    // Update session
+    await this.redisClient.hset(sessionKey, 'refreshToken', newRefreshToken);
+
+    // Add old refreshToken to blacklist
+    await this.redisClient.sadd('blacklist', refreshToken);
+    await this.redisClient.expire('blacklist', 604800); // 7 days
+
+    // Set new tokens
     res.cookie('refreshToken', newRefreshToken, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       path: '/',
-      maxAge: Number(
-        this.configService.get('REFRESH_TOKEN_COOKIES_EXPIRATION_TIME'),
-      ),
-    });
-
-    const roles = session.user.roles || [];
-    const payload = {
-      userId: session.user.id,
-      sessionId: session.id,
-      roles: roles.map((role) => role.name),
-    } as JwtPayload;
-
-    const newAccessToken = await this.jwtService.signAsync(payload, {
-      expiresIn: this.configService.get(
-        'ACCESS_TOKEN_EXPIRATION_TIME',
-      ) as string,
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
     res.setHeader('Authorization', `Bearer ${newAccessToken}`);
 
     return {
-      message: 'Access token and refresh token refreshed',
+      message: 'Tokens refreshed',
       success: true,
-      data: {
-        accessToken: newAccessToken,
-        refreshToken: newRefreshToken,
-      },
+      data: { accessToken: newAccessToken, refreshToken: newRefreshToken },
     };
   }
 
   async logout(req: Request, res: Response) {
     const payload = req['user'] as JwtPayload;
+    const userId = payload.sub;
+    const sessionId = payload.sid;
+    const sessionKey = `session:${userId}:${sessionId}`;
 
-    const session = await this.sessionsRepository.findOne({
-      where: { id: payload.sessionId },
-    });
-    if (!session) throw new BadRequestException('Session not found');
-
-    session.revoked = true;
-
-    await this.sessionsRepository.save(session);
-
+    // Revoke the current session
+    await this.redisClient.hset(sessionKey, 'revoked', 'true');
     res.clearCookie('refreshToken', {
       maxAge: 0,
       httpOnly: true,
@@ -128,39 +221,34 @@ export class SessionsService {
   }
 
   async revokeSession(sessionId: string, req: Request) {
-    const { userId } = req['user'] as JwtPayload;
+    const payload = req['user'] as JwtPayload;
+    const userId = payload.sub;
 
-    const session = await this.sessionsRepository.findOne({
-      where: { id: sessionId },
-      relations: ['user'],
-    });
+    const sessionKey = `session:${userId}:${sessionId}`;
 
-    if (!session) throw new BadRequestException('Session not found');
-    if (session.user.id !== userId)
-      throw new BadRequestException('You cant do this action');
+    const exists = await this.redisClient.exists(sessionKey);
+    if (exists === 0) throw new BadRequestException('Session not found');
 
-    session.revoked = true;
-
-    await this.sessionsRepository.save(session);
+    await this.redisClient.hset(sessionKey, 'revoked', 'true');
 
     return { success: true, message: 'Session revoked successfully' };
   }
 
   async revokeAllSessions(req: Request) {
-    const { userId, sessionId } = req['user'] as JwtPayload;
+    const payload = req['user'] as JwtPayload;
+    const userId = payload.sub;
+    const currentSessionId = payload.sid; // Assuming sid is in the payload
 
-    if (!sessionId)
-      throw new BadRequestException('Session ID not found in token');
+    const sessionKeys = await this.redisClient.keys(`session:${userId}:*`);
 
-    await this.sessionsRepository
-      .createQueryBuilder()
-      .update(Session)
-      .set({ revoked: true })
-      .where('userId = :userId', { userId })
-      .andWhere('id != :sessionId', { sessionId })
-      .andWhere('revoked = :revoked', { revoked: false })
-      .execute();
+    const revokePromises = sessionKeys
+      .filter((key) => {
+        const sessionId = key.split(':')[2];
+        return sessionId !== currentSessionId;
+      })
+      .map((key) => this.redisClient.hset(key, 'revoked', 'true'));
 
+    await Promise.all(revokePromises);
     return {
       success: true,
       message: 'All sessions revoked except current',

@@ -1,6 +1,21 @@
-import { IsDefined, IsIn, IsString, Length, ValidateIf } from 'class-validator';
+import {
+  IsDefined,
+  IsEmail,
+  IsIn,
+  IsString,
+  Length,
+  ValidateIf,
+} from 'class-validator';
 
 export class ResetPassword {
+  @IsEmail()
+  @IsDefined()
+  email: string;
+
+  @IsDefined()
+  @Length(6, 6)
+  resetCode: string;
+
   @IsDefined()
   @IsString()
   @Length(6, 30)
