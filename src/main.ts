@@ -4,9 +4,13 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import { ValidationPipe } from '@nestjs/common';
 import { UserSeederService } from './users/seeder/user.seeder.service';
+import { GlobalErrorFilter } from './filters/global-error.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.useGlobalFilters(new GlobalErrorFilter());
+
   const seeder = app.get(UserSeederService);
   await seeder.seed();
   // Apply Middlewares
