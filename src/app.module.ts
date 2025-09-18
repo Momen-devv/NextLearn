@@ -15,11 +15,13 @@ import { UserSeederService } from './users/seeder/user.seeder.service';
 import { Session } from 'inspector/promises';
 import { Role } from './users/entities/roles.entity';
 import { User } from './users/entities/user.entity';
+import { CloudinaryModule } from './Shared/cloudinary/cloudinary.module';
 @Module({
   imports: [
     TypeOrmModule.forRoot(dataSourceOptions),
     TypeOrmModule.forFeature([User, Role, Session]),
     SharedModule,
+    CloudinaryModule,
     ThrottlerModule.forRoot([
       {
         name: 'sensitive', // For highly sensitive routes like OTP or password reset
