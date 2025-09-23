@@ -2,25 +2,26 @@ import {
   Body,
   Controller,
   Get,
-  Param,
   Post,
-  ParseUUIDPipe,
   Res,
   Req,
   UseGuards,
   HttpCode,
 } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
-import { ResendVerification } from './dto/resend-verification.dto';
-import { LoginDto } from './dto/login.dto';
+import { AuthService } from '../services/auth.service';
+import {
+  RegisterDto,
+  ResendVerification,
+  LoginDto,
+  ForgotPasswordDto,
+  ResetPassword,
+  ChangePasswordDto,
+  VerifyEmailDto,
+} from '../dto';
 import type { Request, Response } from 'express';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPassword } from './dto/reset-password.dto';
-import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
-import { VerifyEmailDto } from './dto/verify-email.dto';
+
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
