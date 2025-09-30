@@ -3,7 +3,7 @@ import { MailService } from '../../mail/mail.service';
 import { Job } from 'bullmq';
 import { ResetPasswordJobData } from '../interfaces';
 
-@Processor('emailQueue', { name: 'send-reset-password' })
+@Processor('emailQueue', { name: 'send-reset-password', concurrency: 3 })
 export class ResetPasswordEmailProcessor extends WorkerHost {
   constructor(private mailService: MailService) {
     super();

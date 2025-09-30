@@ -54,18 +54,11 @@ export class AuthService {
 
     await this.redisClient.setex(`otp:email:${user.id}`, 300, verificationCode); // 5 min
 
-    await this.emailQueue.add(
-      'send-verification',
-      {
-        email: user.email,
-        firstName: user.firstName,
-        verificationCode: verificationCode,
-      },
-      {
-        attempts: 3,
-        backoff: 5000,
-      },
-    );
+    await this.emailQueue.add('send-verification', {
+      email: user.email,
+      firstName: user.firstName,
+      verificationCode: verificationCode,
+    });
 
     return {
       message: 'Verification link sent, please verify your account',
@@ -118,18 +111,11 @@ export class AuthService {
 
     await this.redisClient.setex(`otp:email:${user.id}`, 300, verificationCode); // 5 min
 
-    await this.emailQueue.add(
-      'send-reset-verification',
-      {
-        email: user.email,
-        firstName: user.firstName,
-        verificationCode: verificationCode,
-      },
-      {
-        attempts: 3,
-        backoff: 5000,
-      },
-    );
+    await this.emailQueue.add('send-reset-verification', {
+      email: user.email,
+      firstName: user.firstName,
+      verificationCode: verificationCode,
+    });
 
     return { message: 'Verification link resent to your email', status: 200 };
   }
@@ -196,18 +182,11 @@ export class AuthService {
 
     await this.redisClient.setex(`reset:email:${user.id}`, 900, resetCode);
 
-    await this.emailQueue.add(
-      'send-reset-password',
-      {
-        email: user.email,
-        firstName: user.firstName,
-        passwordResetCode: resetCode,
-      },
-      {
-        attempts: 3,
-        backoff: 5000,
-      },
-    );
+    await this.emailQueue.add('send-reset-password', {
+      email: user.email,
+      firstName: user.firstName,
+      passwordResetCode: resetCode,
+    });
 
     return { message: 'Reset link sent to your email', status: 200 };
   }
@@ -224,10 +203,6 @@ export class AuthService {
     }
 
     const newPassword = await this.hashPassword(dto.password);
-
-    // await this.updateUser(user.id, {
-    //   password: newPassword,
-    // });
 
     await this.userRepository.updateUser(user.id, {
       password: newPassword,

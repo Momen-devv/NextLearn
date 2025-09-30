@@ -52,6 +52,7 @@ import { JobsModule } from './jobs/jobs.module';
           username: configService.get<string>('REDIS_USERNAME'),
           password: configService.get<string>('REDIS_PASSWORD'),
         },
+        defaultJobOptions: { attempts: 3, backoff: 5000 },
       }),
       inject: [ConfigService],
     }),

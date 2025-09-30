@@ -3,7 +3,7 @@ import { MailService } from '../../mail/mail.service';
 import { Job } from 'bullmq';
 import { VerificationJobData } from '../interfaces';
 
-@Processor('emailQueue', { name: 'send-verification' })
+@Processor('emailQueue', { name: 'send-verification', concurrency: 3 })
 export class VerificationEmailProcessor extends WorkerHost {
   constructor(private mailService: MailService) {
     super();
