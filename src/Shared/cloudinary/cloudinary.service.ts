@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
-
+import { UploadFile } from './interfaces';
 @Injectable()
 export class CloudinaryService {
   constructor(private configService: ConfigService) {
@@ -11,29 +11,37 @@ export class CloudinaryService {
       api_secret: this.configService.get('CLOUDINARY_API_SECRET') as string,
     });
   }
-
   async uploadFile(
-    file: Express.Multer.File,
+    buffer: Buffer,
     folder: string,
     publicId: string,
-  ): Promise<UploadApiResponse> {
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        {
-          resource_type: 'image',
-          folder: folder,
-          public_id: publicId,
-        },
-        (error, result) => {
-          if (error) reject(new Error(`Upload failed: ${error.message}`));
-          else resolve(result as UploadApiResponse);
-        },
-      );
-      uploadStream.end(file.buffer);
+  ): Promise<UploadFile> {
+    const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+      cloudinary.uploader
+        .upload_stream(
+          {
+            resource_type: 'auto',
+            folder: folder,
+            public_id: publicId,
+          },
+          (error, result) => {
+            if (error) reject(new Error(`Upload failed: ${error.message}`));
+            else if (result) resolve(result);
+            else reject(new Error('Upload failed: No result returned'));
+          },
+        )
+        .end(buffer);
     });
+
+    if (!result)
+      throw new BadRequestException('Upload failed: No result returned!');
+    return {
+      secure_url: result.secure_url,
+      public_id: result.public_id,
+    };
   }
 
-  async deleteFile(publicId: string): Promise<void> {
-    await cloudinary.uploader.destroy(publicId);
+  async deleteFile(public_id: string): Promise<void> {
+    await cloudinary.uploader.destroy(public_id);
   }
 }
