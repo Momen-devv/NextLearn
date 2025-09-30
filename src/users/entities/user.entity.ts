@@ -20,8 +20,15 @@ export class User {
   @Column()
   password: string;
 
+  @Column({
+    nullable: true,
+    default:
+      'https://res.cloudinary.com/dsui5qi7x/image/upload/v1759212429/lms/users/profiles/0e1149c4-c73a-4357-afdf-611112d5001f-profile-v1759212426270.jpg',
+  })
+  profilePictureUrl: string;
+
   @Column({ nullable: true })
-  profileImage: string;
+  publicId: string;
 
   @Column()
   firstName: string;
