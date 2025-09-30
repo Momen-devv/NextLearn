@@ -14,27 +14,34 @@ import type { Request } from 'express';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { ProfileImageValidationPipe } from 'src/pipes/profileimage-validation.pipe';
 
 @Controller('users')
 export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @UseGuards(AuthGuard('jwt'))
-  @Get('me')
-  GetMe(@Req() req: Request) {
+  @Get('profile')
+  getProfile(@Req() req: Request) {
     return this.usersService.getMe(req);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Patch('profile')
+  updateProfile(@Req() req: Request, @Body() dto: UpdateProfileDto) {
+    return this.usersService.updateProfile(req, dto);
   }
 
   @UseGuards(AuthGuard('jwt'))
   @UseInterceptors(
     FileInterceptor('profileImage', { storage: memoryStorage() }),
   )
-  @Patch('me')
-  updateMe(
+  @Patch('profile-picture')
+  updateProfilePicture(
     @Req() req: Request,
-    @Body() dto: UpdateProfileDto,
-    @UploadedFile() profileImage: Express.Multer.File,
+    @UploadedFile(ProfileImageValidationPipe)
+    profileImage: Express.Multer.File,
   ) {
-    return this.usersService.updateMe(req, dto, profileImage);
+    return this.usersService.updateProfilePicture(req, profileImage);
   }
 }
